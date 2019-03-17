@@ -63,18 +63,22 @@ namespace Birko.Data.Store
             }
         }
 
-        public void Init()
+        public void Init(Func<CreateIndexDescriptor, ICreateIndexRequest> indexDescriptor)
         {
             var indexName = GetIndexName();
             if (!Connector.IndexExists(indexName).Exists)
             {
-                var response = Connector.CreateIndex(indexName, cid =>
-                    cid.Mappings(md =>
-                        md.Map<T>(m => m.AutoMap())
-                    )
-                );
+                var response = Connector.CreateIndex(indexName, indexDescriptor);
             }
-       }
+        }
+
+        public void Init()
+        {
+            Init(cid =>
+                cid.Mappings(md =>
+                    md.Map<T>(m => m.AutoMap())
+            ));
+        }
 
         public void DeleteIndex(Type type)
         {
