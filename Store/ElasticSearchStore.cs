@@ -80,6 +80,11 @@ namespace Birko.Data.Store
             ));
         }
 
+        public void DeleteIndex()
+        {
+            DeleteIndex(typeof(T));
+        }
+
         public void DeleteIndex(Type type)
         {
             if (type != null)
@@ -233,6 +238,11 @@ namespace Birko.Data.Store
         {
             var type = typeof(T);
             return string.Format("{0}_{1}", _settings.Name, type.Name).ToLower();
+        }
+
+        public void Destroy()
+        {
+            DeleteIndex();
         }
     }
 }
