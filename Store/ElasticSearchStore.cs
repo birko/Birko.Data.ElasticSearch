@@ -123,8 +123,17 @@ namespace Birko.Data.Store
             if (request != null)
             {
                 int count = request.From ?? 0;
+                Time scrollTime = null;
+                string scrollId = string.Empty;
+                if (request.From == null && request.Size == null)
+                {
+                    scrollTime = new Time(new TimeSpan(0, 1, 0));
+                    request.Scroll = scrollTime;
+                    request.Size = 1000;
+                }
                 var searchResponse = Connector.Search<T>(request);
-                long end = request.Size != null ? (count + request.Size ?? 12 ) : searchResponse.Total;
+                scrollId = searchResponse.ScrollId;
+                long end = scrollTime == null ? (count + request.Size ?? 12 ) : searchResponse.Total;
                 if(end > searchResponse.Total)
                 {
                     end = searchResponse.Total;
@@ -139,9 +148,21 @@ namespace Birko.Data.Store
                     }
                     if (count < end)
                     {
-                        request.From = count;
-                        searchResponse = Connector.Search<T>(request);
+                        if (!string.IsNullOrEmpty(scrollId) && scrollTime != null)
+                        {
+                            searchResponse = Connector.Scroll<T>(new Nest.ScrollRequest(scrollId, scrollTime));
+                            scrollId = searchResponse.ScrollId;
+                        }
+                        else
+                        {
+                            request.From = count;
+                            searchResponse = Connector.Search<T>(request);
+                        }
                     }
+                }
+                if (!string.IsNullOrEmpty(scrollId) && scrollTime != null)
+                {
+                    Connector.ClearScroll(new Nest.ClearScrollRequest(scrollId));
                 }
             }
         }
