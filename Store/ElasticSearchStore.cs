@@ -125,7 +125,9 @@ namespace Birko.Data.Store
                 int count = request.From ?? 0;
                 Time scrollTime = null;
                 string scrollId = string.Empty;
-                if (request.From == null && request.Size == null)
+                int? size = request.Size;
+                if ((request.From == null && request.Size == null)
+                   || request.Size >= 10000)
                 {
                     scrollTime = new Time(new TimeSpan(0, 1, 0));
                     request.Scroll = scrollTime;
@@ -133,7 +135,7 @@ namespace Birko.Data.Store
                 }
                 var searchResponse = Connector.Search<T>(request);
                 scrollId = searchResponse.ScrollId;
-                long end = scrollTime == null ? (count + request.Size ?? 12 ) : searchResponse.Total;
+                long end = (size != null) ? (count + size ?? 12 ) : searchResponse.Total;
                 if(end > searchResponse.Total)
                 {
                     end = searchResponse.Total;
