@@ -20,8 +20,13 @@ namespace Birko.Data.ElasticSearch
             }
             if (!_clients.ContainsKey(settings.GetId()))
             {
+                #if DEBUG
                 var isFiddlerRunning = System.Diagnostics.Process.GetProcessesByName("fiddler").Any();
                 var host = isFiddlerRunning ? settings.Location.Replace("localhost", "ipv4.fiddler") : settings.Location;
+                #else
+                var host = settings.Location;
+                #endif
+
                 var local = new Uri(host);
                 ConnectionSettings clientSettings = new ConnectionSettings(local)
                         .DisableDirectStreaming();
