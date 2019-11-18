@@ -124,7 +124,7 @@ namespace Birko.Data.Store
             {
                 int count = request.From ?? 0;
                 Time scrollTime = null;
-                string scrollId = string.Empty;
+                string scrollId;
                 int? size = request.Size;
                 if ((request.From == null && request.Size == null)
                    || request.Size >= 10000)

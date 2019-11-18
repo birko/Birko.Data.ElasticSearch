@@ -20,10 +20,10 @@ namespace Birko.Data.ElasticSearch
             }
             if (!_clients.ContainsKey(settings.GetId()))
             {
-                var local = new Uri(settings.Location);
-                var indexName = string.Format("{0}_{1}", settings.Name, "default").ToLower();
+                var isFiddlerRunning = System.Diagnostics.Process.GetProcessesByName("fiddler").Any();
+                var host = isFiddlerRunning ? settings.Location.Replace("localhost", "ipv4.fiddler") : settings.Location;
+                var local = new Uri(host);
                 ConnectionSettings clientSettings = new ConnectionSettings(local)
-                        //.DefaultIndex(indexName)
                         .DisableDirectStreaming();
                 _clients.Add(settings.GetId(), new ElasticClient(clientSettings));
             }
