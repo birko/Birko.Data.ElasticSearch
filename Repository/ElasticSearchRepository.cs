@@ -25,15 +25,18 @@ namespace Birko.Data.Repository
         [Obsolete("Temporary solution until Expresion parser is build")]
         public override TViewModel Delete(Guid Id)
         {
-            var indexName = (_store as Store.ElasticSearchStore<TModel>).GetIndexName();
-            var item = (_store as Store.ElasticSearchStore<TModel>).Connector.Get<TModel>(Id, i => i.Index(indexName));
-            TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
-            if (item.Found)
+            if (!ReadMode)
             {
-                result.LoadFrom(item.Source);
-                (_store as Store.ElasticSearchStore<TModel>).Delete(item.Source);
-                StoreChanges();
-                return result;
+                var indexName = (_store as Store.ElasticSearchStore<TModel>).GetIndexName();
+                var item = (_store as Store.ElasticSearchStore<TModel>).Connector.Get<TModel>(Id, i => i.Index(indexName));
+                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
+                if (item.Found)
+                {
+                    result.LoadFrom(item.Source);
+                    (_store as Store.ElasticSearchStore<TModel>).Delete(item.Source);
+                    StoreChanges();
+                    return result;
+                }
             }
             return default(TViewModel);
         }
