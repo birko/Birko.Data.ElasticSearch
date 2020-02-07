@@ -5,10 +5,10 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
 
-namespace Birko.Data.Store
+namespace Birko.Data.Stores
 {
     public class ElasticSearchStore<T> : IStore<T>
-         where T : Model.AbstractModel
+         where T : Models.AbstractModel
     {
         public ElasticClient Connector { get; private set; }
         private readonly Settings _settings = null;
@@ -205,10 +205,10 @@ namespace Birko.Data.Store
                     }
                     else
                     {
-                        if (data is Model.AbstractLogModel)
+                        if (data is Models.AbstractLogModel)
                         {
-                            (data as Model.AbstractLogModel).PrevUpdatedAt = (data as Model.AbstractLogModel).UpdatedAt;
-                            (data as Model.AbstractLogModel).UpdatedAt = DateTime.UtcNow;
+                            (data as Models.AbstractLogModel).PrevUpdatedAt = (data as Models.AbstractLogModel).UpdatedAt;
+                            (data as Models.AbstractLogModel).UpdatedAt = DateTime.UtcNow;
                         }
                         if (!_updateList.ContainsKey(data.Guid.Value))
                         {

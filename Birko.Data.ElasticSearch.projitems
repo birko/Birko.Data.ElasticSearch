@@ -10,7 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)ElasticSearch\ElasticSearch.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Repository\ElasticSearchRepository.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Store\ElasticSearchStore.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Repositories\ElasticSearchRepository.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchStore.cs" />
   </ItemGroup>
 </Project>

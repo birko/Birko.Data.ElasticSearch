@@ -12,7 +12,7 @@ namespace Birko.Data.ElasticSearch
     {
         private static Dictionary<string, ElasticClient> _clients;
 
-        public static ElasticClient GetClient(Store.Settings settings)
+        public static ElasticClient GetClient(Stores.Settings settings)
         {
             if (_clients == null)
             {

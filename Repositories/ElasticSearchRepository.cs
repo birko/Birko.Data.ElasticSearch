@@ -2,15 +2,15 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Birko.Data.Repository
+namespace Birko.Data.Repositories
 {
     public abstract class ElasticSearchRepository<TViewModel, TModel> : AbstractRepository<TViewModel, TModel>
-        where TModel : Model.AbstractModel, Model.ILoadable<TViewModel>
-        where TViewModel : Model.ILoadable<TModel>
+        where TModel : Models.AbstractModel, Models.ILoadable<TViewModel>
+        where TViewModel : Models.ILoadable<TModel>
     {
         public ElasticSearchRepository(string path, string name) : base(path)
         {
-            _store = new Store.ElasticSearchStore<TModel>(new Store.Settings
+            _store = new Stores.ElasticSearchStore<TModel>(new Stores.Settings
             {
                 Location = path,
                 Name = name
@@ -19,7 +19,7 @@ namespace Birko.Data.Repository
 
         public virtual long Count(Nest.QueryContainer query)
         {
-            return (_store as Store.ElasticSearchStore<TModel>).Count(query);
+            return (_store as Stores.ElasticSearchStore<TModel>).Count(query);
         }
 
         [Obsolete("Temporary solution until Expresion parser is build")]
@@ -27,13 +27,13 @@ namespace Birko.Data.Repository
         {
             if (!ReadMode)
             {
-                var indexName = (_store as Store.ElasticSearchStore<TModel>).GetIndexName();
-                var item = (_store as Store.ElasticSearchStore<TModel>).Connector.Get<TModel>(Id, i => i.Index(indexName));
+                var indexName = (_store as Stores.ElasticSearchStore<TModel>).GetIndexName();
+                var item = (_store as Stores.ElasticSearchStore<TModel>).Connector.Get<TModel>(Id, i => i.Index(indexName));
                 TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
                 if (item.Found)
                 {
                     result.LoadFrom(item.Source);
-                    (_store as Store.ElasticSearchStore<TModel>).Delete(item.Source);
+                    (_store as Stores.ElasticSearchStore<TModel>).Delete(item.Source);
                     StoreChanges();
                     return result;
                 }
@@ -44,8 +44,8 @@ namespace Birko.Data.Repository
         [Obsolete("Temporary solution until Expresion parser is build")]
         public override TViewModel Read(Guid Id)
         {
-            var indexName = (_store as Store.ElasticSearchStore<TModel>).GetIndexName();
-            var item = (_store as Store.ElasticSearchStore<TModel>).Connector.Get<TModel>(Id, i => i.Index(indexName));
+            var indexName = (_store as Stores.ElasticSearchStore<TModel>).GetIndexName();
+            var item = (_store as Stores.ElasticSearchStore<TModel>).Connector.Get<TModel>(Id, i => i.Index(indexName));
             TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
             if (item.Found)
             {
@@ -58,7 +58,7 @@ namespace Birko.Data.Repository
 
         public virtual void Read(Nest.QueryContainer query, Action<TViewModel> readAction)
         {
-            (_store as Store.ElasticSearchStore<TModel>).List(query, (item) =>
+            (_store as Stores.ElasticSearchStore<TModel>).List(query, (item) =>
             {
                 TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
                 result.LoadFrom(item);
@@ -69,7 +69,7 @@ namespace Birko.Data.Repository
 
         public virtual void Read(Nest.SearchRequest request, Action<TViewModel> readAction)
         {
-            (_store as Store.ElasticSearchStore<TModel>).List(request, (item) =>
+            (_store as Stores.ElasticSearchStore<TModel>).List(request, (item) =>
             {
                 TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
                 result.LoadFrom(item);
