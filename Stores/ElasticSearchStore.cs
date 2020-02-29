@@ -20,11 +20,7 @@ namespace Birko.Data.Stores
         public ElasticSearchStore(Settings settings)
         {
             _settings = settings;
-            Connector = ElasticSearch.ElasticSearch.GetClient(new Settings()
-            {
-                Location = _settings.Location,
-                Name = _settings.Name,
-            });
+            Connector = ElasticSearch.ElasticSearch.GetClient(_settings);
             _insertList = new Dictionary<Guid, T>();
             _updateList = new Dictionary<Guid, T>();
             _deleteList = new Dictionary<Guid, T>();

@@ -8,13 +8,9 @@ namespace Birko.Data.Repositories
         where TModel : Models.AbstractModel, Models.ILoadable<TViewModel>
         where TViewModel : Models.ILoadable<TModel>
     {
-        public ElasticSearchRepository(string path, string name) : base(path)
+        public ElasticSearchRepository(Stores.Settings settings) : base(settings)
         {
-            _store = new Stores.ElasticSearchStore<TModel>(new Stores.Settings
-            {
-                Location = path,
-                Name = name
-            });
+            _store = new Stores.ElasticSearchStore<TModel>(settings);
         }
 
         public virtual long Count(Nest.QueryContainer query)

@@ -8,3 +8,13 @@ trigger:
 
 pool:
   vmImage: 'ubuntu-latest'
+
+steps:
+- task: GitHubRelease@0
+  inputs:
+    gitHubConnection: 'birko-pipeline'
+    repositoryName: '$(Build.Repository.Name)'
+    action: 'create'
+    target: '$(Build.SourceVersion)'
+    tagSource: 'auto'
+    compareWith: 'lastFullRelease'
