@@ -7,31 +7,33 @@ using System.Text;
 
 namespace Birko.Data.Stores
 {
-    public class ElasticSearchStore<T> : IStore<T>
+    public class ElasticSearchStore<T> : AbstractStore<T, Settings>
          where T : Models.AbstractModel
     {
         public ElasticClient Connector { get; private set; }
-        private readonly Settings _settings = null;
+        private Settings _settings = null;
 
         private Dictionary<Guid, T> _insertList = null;
         private Dictionary<Guid, T> _updateList = null;
         private Dictionary<Guid, T> _deleteList = null;
 
-        public ElasticSearchStore(Settings settings)
+        public ElasticSearchStore() : base ()
         {
-            _settings = settings;
-            Connector = ElasticSearch.ElasticSearch.GetClient(_settings);
-            _insertList = new Dictionary<Guid, T>();
-            _updateList = new Dictionary<Guid, T>();
-            _deleteList = new Dictionary<Guid, T>();
         }
 
-        public long Count()
+        public override void SetSettings(Settings settings)
         {
-            return Count((QueryContainer)null);
+            if (settings is Settings sets)
+            {
+                _settings = sets;
+                Connector = ElasticSearch.ElasticSearch.GetClient(_settings);
+                _insertList = new Dictionary<Guid, T>();
+                _updateList = new Dictionary<Guid, T>();
+                _deleteList = new Dictionary<Guid, T>();
+            }
         }
 
-        public long Count(Expression<Func<T, bool>> filter)
+        public override long Count(Expression<Func<T, bool>> filter)
         {
             if (filter != null)
             {
@@ -51,7 +53,7 @@ namespace Birko.Data.Stores
             return Connector.Count<T>(request).Count;
         }
 
-        public void Delete(T data)
+        public override void Delete(T data)
         {
             if (data != null && data.Guid != null && !_deleteList.ContainsKey(data.Guid.Value))
             {
@@ -68,7 +70,7 @@ namespace Birko.Data.Stores
             }
         }
 
-        public void Init()
+        public override void Init()
         {
             Init(cid =>
                 cid.Mappings(md =>
@@ -98,13 +100,7 @@ namespace Birko.Data.Stores
             }
         }
 
-        public void List(Action<T> listAction)
-        {
-            List((QueryContainer)null, listAction);
-
-        }
-
-        public void List(Expression<Func<T, bool>> filter, Action<T> listAction)
+        public override void List(Expression<Func<T, bool>> filter, Action<T> listAction)
         {
             SearchDescriptor<T> search = new SearchDescriptor<T>();
             if (filter != null)
@@ -176,7 +172,7 @@ namespace Birko.Data.Stores
             List(request, listAction);
         }
 
-        public void Save(T data, StoreDataDelegate<T> storeDelegate = null)
+        public override void Save(T data, StoreDataDelegate<T> storeDelegate = null)
         {
             if (data != null)
             {
@@ -219,7 +215,7 @@ namespace Birko.Data.Stores
             }
         }
 
-        public void StoreChanges()
+        public override void StoreChanges()
         {
             if (Connector != null)
             {
@@ -259,7 +255,7 @@ namespace Birko.Data.Stores
             return string.Format("{0}_{1}", _settings.Name, type.Name).ToLower();
         }
 
-        public void Destroy()
+        public override void Destroy()
         {
             DeleteIndex();
         }
