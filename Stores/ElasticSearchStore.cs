@@ -7,7 +7,7 @@ using System.Text;
 
 namespace Birko.Data.Stores
 {
-    public class ElasticSearchStore<T> : AbstractStore<T, Settings>
+    public class ElasticSearchStore<T> : AbstractStore<T>
          where T : Models.AbstractModel
     {
         public ElasticClient Connector { get; private set; }
@@ -21,7 +21,7 @@ namespace Birko.Data.Stores
         {
         }
 
-        public override void SetSettings(Settings settings)
+        public override void SetSettings(ISettings settings)
         {
             if (settings is Settings sets)
             {
