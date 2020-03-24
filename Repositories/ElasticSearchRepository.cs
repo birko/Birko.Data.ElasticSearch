@@ -73,7 +73,7 @@ namespace Birko.Data.Repositories
             return default(TViewModel);
         }
 
-        public virtual void Read(Nest.QueryContainer query, Action<TViewModel> readAction)
+        public virtual void Read(Nest.QueryContainer query, Action<TViewModel> readAction, int? limit = null, int? offset = null)
         {
             var _store = Store;
             (_store as Stores.ElasticSearchStore<TModel>).List(query, (item) =>
@@ -82,7 +82,7 @@ namespace Birko.Data.Repositories
                 result.LoadFrom(item);
                 StoreHash(item);
                 readAction?.Invoke(result);
-            });
+            }, limit, offset);
         }
 
         public virtual void Read(Nest.SearchRequest request, Action<TViewModel> readAction)

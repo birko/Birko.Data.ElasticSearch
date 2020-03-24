@@ -100,14 +100,14 @@ namespace Birko.Data.Stores
             }
         }
 
-        public override void List(Expression<Func<T, bool>> filter, Action<T> listAction)
+        public override void List(Expression<Func<T, bool>> filter, Action<T> listAction, int? limit = null, int? offset = null)
         {
             SearchDescriptor<T> search = new SearchDescriptor<T>();
             if (filter != null)
             {
                 throw new NotImplementedException();
             }
-            List((QueryContainer)null, listAction);
+            List((QueryContainer)null, listAction, limit, offset);
         }
 
         public void List(SearchRequest request, Action<T> listAction)
@@ -161,10 +161,14 @@ namespace Birko.Data.Stores
             }
         }
 
-        public void List(QueryContainer query, Action<T> listAction)
+        public void List(QueryContainer query, Action<T> listAction, int? limit = null, int? offset = null)
         {
             string indexName = GetIndexName();
-            SearchRequest request = new SearchRequest(indexName);
+            SearchRequest request = new SearchRequest(indexName)
+            {
+                Size = limit,
+                From = offset
+            };
             if (query != null)
             {
                 request.Query = query;
