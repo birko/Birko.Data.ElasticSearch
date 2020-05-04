@@ -263,5 +263,10 @@ namespace Birko.Data.Stores
         {
             DeleteIndex();
         }
+
+        public void ClearCache()
+        {
+            Connector.ClearCache(GetIndexName());
+        }
     }
 }

@@ -96,5 +96,10 @@ namespace Birko.Data.Repositories
                 readAction?.Invoke(result);
             });
         }
+
+        public void ClearCache() {
+            var _store = Store;
+            (_store as Stores.ElasticSearchStore<TModel>).ClearCache();
+        }
     }
 }
