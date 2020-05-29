@@ -66,7 +66,7 @@ namespace Birko.Data.Stores
             var indexName = GetIndexName();
             if (!Connector.IndexExists(indexName).Exists)
             {
-                var response = Connector.CreateIndex(indexName, indexDescriptor);
+                _ = Connector.CreateIndex(indexName, indexDescriptor);
             }
         }
 
@@ -96,7 +96,7 @@ namespace Birko.Data.Stores
             if (!string.IsNullOrEmpty(name))
             {
                 var indexName = string.Format("{0}_{1}", _settings.Name, name).ToLower();
-                var response = Connector.DeleteIndex(indexName);
+                _ = Connector.DeleteIndex(indexName);
             }
         }
 
@@ -118,13 +118,20 @@ namespace Birko.Data.Stores
                 Time scrollTime = null;
                 string scrollId;
                 int? size = request.Size;
+                int skip = 0;
                 if ((request.From == null && request.Size == null)
-                   || request.Size >= 10000)
+                   || ((request.Size ?? 0) + count) >= 10000)
                 {
                     scrollTime = new Time(new TimeSpan(0, 1, 0));
                     request.Scroll = scrollTime;
                     request.Size = 1000;
+                    request.From = null;
+                    if (count != 0)
+                    {
+                        skip = count;
+                    }
                 }
+
                 var searchResponse = Connector.Search<T>(request);
                 scrollId = searchResponse.ScrollId;
                 long end = (size != null) ? (count + size ?? 12 ) : searchResponse.Total;
@@ -134,9 +141,17 @@ namespace Birko.Data.Stores
                 }
                 while (count < end)
                 {
-                    var result = searchResponse.Documents;
-                    foreach (var document in result)
+                    foreach (var document in searchResponse.Documents)
                     {
+                        if (skip > 0)
+                        {
+                            skip--;
+                            continue;
+                        }
+                        if (count >= end)
+                        {
+                            break;
+                        }
                         listAction?.Invoke(document);
                         count++;
                     }
@@ -190,14 +205,7 @@ namespace Birko.Data.Stores
                 {
                     if (newItem)
                     {
-                        if (!_insertList.ContainsKey(data.Guid.Value))
-                        {
-                            _insertList.Add(data.Guid.Value, data);
-                        }
-                        else
-                        {
-                            _insertList[data.Guid.Value] = data;
-                        }
+                        _insertList[data.Guid.Value] = data;
                     }
                     else
                     {
@@ -206,14 +214,7 @@ namespace Birko.Data.Stores
                             (data as Models.AbstractLogModel).PrevUpdatedAt = (data as Models.AbstractLogModel).UpdatedAt;
                             (data as Models.AbstractLogModel).UpdatedAt = DateTime.UtcNow;
                         }
-                        if (!_updateList.ContainsKey(data.Guid.Value))
-                        {
-                            _updateList.Add(data.Guid.Value, data);
-                        }
-                        else
-                        {
-                            _updateList[data.Guid.Value] = data;
-                        }
+                        _updateList[data.Guid.Value] = data;
                     }
                 }
             }
