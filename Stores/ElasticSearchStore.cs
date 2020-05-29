@@ -141,19 +141,26 @@ namespace Birko.Data.Stores
                 }
                 while (count < end)
                 {
-                    foreach (var document in searchResponse.Documents)
+                    if (searchResponse.Documents.Count >= skip)
                     {
-                        if (skip > 0)
+                        foreach (var document in searchResponse.Documents)
                         {
-                            skip--;
-                            continue;
+                            if (skip > 0)
+                            {
+                                skip--;
+                                continue;
+                            }
+                            if (count >= end)
+                            {
+                                break;
+                            }
+                            listAction?.Invoke(document);
+                            count++;
                         }
-                        if (count >= end)
-                        {
-                            break;
-                        }
-                        listAction?.Invoke(document);
-                        count++;
+                    }
+                    else
+                    {
+                        skip -= searchResponse.Documents.Count;
                     }
                     if (count < end)
                     {
