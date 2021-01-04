@@ -45,7 +45,7 @@ namespace Birko.Data.Repositories
                 var _store = Store;
                 var indexName = (_store as Stores.ElasticSearchStore<TModel>).GetIndexName();
                 var item = (_store as Stores.ElasticSearchStore<TModel>)?.Connector.Get<TModel>(Id, i => i.Index(indexName));
-                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
+                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
                 if (item?.Found == true)
                 {
                     result.LoadFrom(item.Source);
@@ -63,7 +63,7 @@ namespace Birko.Data.Repositories
             var _store = Store;
             var indexName = (_store as Stores.ElasticSearchStore<TModel>).GetIndexName();
             var item = (_store as Stores.ElasticSearchStore<TModel>)?.Connector.Get<TModel>(Id, i => i.Index(indexName));
-            TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
+            TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
             if (item?.Found == true)
             {
                 result.LoadFrom(item.Source);
@@ -78,7 +78,7 @@ namespace Birko.Data.Repositories
             var _store = Store;
             (_store as Stores.ElasticSearchStore<TModel>).List(query, (item) =>
             {
-                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
+                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
                 result.LoadFrom(item);
                 StoreHash(item);
                 readAction?.Invoke(result);
@@ -90,7 +90,7 @@ namespace Birko.Data.Repositories
             var _store = Store;
             (_store as Stores.ElasticSearchStore<TModel>).List(request, (item) =>
             {
-                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), new object[] { });
+                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
                 result.LoadFrom(item);
                 StoreHash(item);
                 readAction?.Invoke(result);

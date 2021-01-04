@@ -50,7 +50,7 @@ namespace Birko.Data.Stores
             {
                 request.Query = query;
             }
-            return Connector.Count<T>(request).Count;
+            return Connector.Count(request).Count;
         }
 
         public override void Delete(T data)
@@ -64,18 +64,17 @@ namespace Birko.Data.Stores
         public void Init(Func<CreateIndexDescriptor, ICreateIndexRequest> indexDescriptor)
         {
             var indexName = GetIndexName();
-            if (!Connector.IndexExists(indexName).Exists)
+            if (!Connector.Indices.Exists(indexName).Exists)
             {
-                _ = Connector.CreateIndex(indexName, indexDescriptor);
+                _ = Connector.Indices.Create(indexName, indexDescriptor);
             }
         }
 
         public override void Init()
         {
             Init(cid =>
-                cid.Mappings(md =>
-                    md.Map<T>(m => m.AutoMap())
-            ));
+                cid.Map<T>(m => m.AutoMap())
+            );
         }
 
         public void DeleteIndex()
@@ -96,7 +95,7 @@ namespace Birko.Data.Stores
             if (!string.IsNullOrEmpty(name))
             {
                 var indexName = string.Format("{0}_{1}", _settings.Name, name).ToLower();
-                _ = Connector.DeleteIndex(indexName);
+                _ = Connector.Indices.Delete(indexName);
             }
         }
 
@@ -274,7 +273,7 @@ namespace Birko.Data.Stores
 
         public void ClearCache()
         {
-            Connector.ClearCache(GetIndexName());
+            Connector.Indices.ClearCache(GetIndexName());
         }
     }
 }
