@@ -37,42 +37,6 @@ namespace Birko.Data.Repositories
             return (_store as Stores.ElasticSearchStore<TModel>)?.Count(query) ?? 0;
         }
 
-        [Obsolete("Temporary solution until Expresion parser is build")]
-        public override TViewModel Delete(Guid Id)
-        {
-            if (!ReadMode)
-            {
-                var _store = Store;
-                var indexName = (_store as Stores.ElasticSearchStore<TModel>).GetIndexName();
-                var item = (_store as Stores.ElasticSearchStore<TModel>)?.Connector.Get<TModel>(Id, i => i.Index(indexName));
-                TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
-                if (item?.Found == true)
-                {
-                    result.LoadFrom(item.Source);
-                    (_store as Stores.ElasticSearchStore<TModel>).Delete(item.Source);
-                    StoreChanges();
-                    return result;
-                }
-            }
-            return default;
-        }
-
-        [Obsolete("Temporary solution until Expresion parser is build")]
-        public override TViewModel Read(Guid Id)
-        {
-            var _store = Store;
-            var indexName = (_store as Stores.ElasticSearchStore<TModel>).GetIndexName();
-            var item = (_store as Stores.ElasticSearchStore<TModel>)?.Connector.Get<TModel>(Id, i => i.Index(indexName));
-            TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
-            if (item?.Found == true)
-            {
-                result.LoadFrom(item.Source);
-                StoreHash(item.Source);
-                return result;
-            }
-            return default;
-        }
-
         public virtual void Read(Nest.QueryContainer query, Action<TViewModel> readAction, int? limit = null, int? offset = null)
         {
             var _store = Store;

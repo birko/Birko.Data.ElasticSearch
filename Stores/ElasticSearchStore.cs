@@ -35,11 +35,7 @@ namespace Birko.Data.Stores
 
         public override long Count(Expression<Func<T, bool>> filter)
         {
-            if (filter != null)
-            {
-                throw new NotImplementedException();
-            }
-            return Count((QueryContainer)null);
+            return Count(ElasticSearch.ElasticSearch.ParseExpression(filter));
         }
 
         public long Count(QueryContainer query)
@@ -101,12 +97,8 @@ namespace Birko.Data.Stores
 
         public override void List(Expression<Func<T, bool>> filter, Action<T> listAction, int? limit = null, int? offset = null)
         {
-            SearchDescriptor<T> search = new SearchDescriptor<T>();
-            if (filter != null)
-            {
-                throw new NotImplementedException();
-            }
-            List((QueryContainer)null, listAction, limit, offset);
+            SearchRequest search = new SearchRequest();
+            List(ElasticSearch.ElasticSearch.ParseExpression(filter), listAction, limit, offset);
         }
 
         public void List(SearchRequest request, Action<T> listAction)
