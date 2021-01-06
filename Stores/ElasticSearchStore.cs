@@ -97,7 +97,6 @@ namespace Birko.Data.Stores
 
         public override void List(Expression<Func<T, bool>> filter, Action<T> listAction, int? limit = null, int? offset = null)
         {
-            SearchRequest search = new SearchRequest();
             List(ElasticSearch.ElasticSearch.ParseExpression(filter), listAction, limit, offset);
         }
 

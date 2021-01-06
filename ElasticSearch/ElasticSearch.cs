@@ -1,4 +1,4 @@
-﻿using Nest;
+using Nest;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -178,6 +178,16 @@ namespace Birko.Data.ElasticSearch
                         {
                             Type type = constantExpression.Value.GetType();
                             var value = type.InvokeMember(memberExpression.Member.Name, BindingFlags.GetField, null, constantExpression.Value, null);
+                            if (parentQuery is Nest.TermQuery constTempQuery)
+                            {
+                                constTempQuery.Value = value;
+                            }
+                            return null;
+                        }
+                        else if (memberExpression is MemberExpression memberExpression1)
+                        {
+                            var f = Expression.Lambda(memberExpression).Compile();
+                            var value = f.DynamicInvoke();
                             if (parentQuery is Nest.TermQuery constTempQuery)
                             {
                                 constTempQuery.Value = value;

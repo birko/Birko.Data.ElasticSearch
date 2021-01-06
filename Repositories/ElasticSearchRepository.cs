@@ -13,7 +13,6 @@ namespace Birko.Data.Repositories
 
         }
 
-
         public virtual void BaseSettings(Stores.ISettings settings)
         {
             if (settings is Stores.Settings setts)
@@ -22,6 +21,7 @@ namespace Birko.Data.Repositories
                 Store = Stores.StoreLocator.GetStore<Stores.ElasticSearchStore<TModel>, Stores.Settings>(setts);
             }
         }
+
         public override void SetSettings(Stores.ISettings settings)
         {
             if (settings is Stores.Settings setts)
