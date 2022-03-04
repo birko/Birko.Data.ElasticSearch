@@ -17,6 +17,8 @@ namespace Birko.Data.Stores
         private Dictionary<Guid, T> _updateList = null;
         private Dictionary<Guid, T> _deleteList = null;
 
+        public int MaxResultWindow { get; set; } = 10000;
+
         public ElasticSearchStore() : base ()
         {
         }
@@ -110,7 +112,7 @@ namespace Birko.Data.Stores
                 int? size = request.Size;
                 int skip = 0;
                 if ((request.From == null && request.Size == null)
-                   || ((request.Size ?? 0) + count) >= 10000)
+                   || ((request.Size ?? 0) + count) >= MaxResultWindow)
                 {
                     scrollTime = new Time(new TimeSpan(0, 1, 0));
                     request.Scroll = scrollTime;
