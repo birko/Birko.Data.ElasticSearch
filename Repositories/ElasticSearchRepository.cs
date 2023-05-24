@@ -40,7 +40,7 @@ namespace Birko.Data.Repositories
         public virtual void Read(Nest.QueryContainer query, Action<TViewModel> readAction, int? limit = null, int? offset = null, int maxResultWindow = 10000)
         {
             var _store = Store;
-            (_store as Stores.ElasticSearchStore<TModel>).MaxResultWindow = maxResultWindow;
+            Stores.ElasticSearchStore<TModel>.MaxResultWindow = maxResultWindow;
             (_store as Stores.ElasticSearchStore<TModel>).List(query, (item) =>
             {
                 TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
@@ -53,7 +53,7 @@ namespace Birko.Data.Repositories
         public virtual void Read(Nest.SearchRequest request, Action<TViewModel> readAction, int maxResultWindow = 10000)
         {
             var _store = Store;
-            (_store as Stores.ElasticSearchStore<TModel>).MaxResultWindow = maxResultWindow;
+            Stores.ElasticSearchStore<TModel>.MaxResultWindow = maxResultWindow;
             (_store as Stores.ElasticSearchStore<TModel>).List(request, (item) =>
             {
                 TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
