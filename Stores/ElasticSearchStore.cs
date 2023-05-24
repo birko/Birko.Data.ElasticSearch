@@ -17,7 +17,7 @@ namespace Birko.Data.Stores
         private Dictionary<Guid, T> _updateList = null;
         private Dictionary<Guid, T> _deleteList = null;
 
-        public int MaxResultWindow { get; set; } = 10000;
+        public static int MaxResultWindow { get; set; } = 10000;
 
         public ElasticSearchStore() : base ()
         {
