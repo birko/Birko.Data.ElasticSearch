@@ -12,7 +12,7 @@ pool:
 steps:
 - task: GitHubRelease@0
   inputs:
-    gitHubConnection: 'birko-pipeline'
+    gitHubConnection: 'github.com_birko'
     repositoryName: '$(Build.Repository.Name)'
     action: 'create'
     target: '$(Build.SourceVersion)'
