@@ -166,6 +166,10 @@ namespace Birko.Data.Stores
                             request.From = count;
                             searchResponse = Connector.Search<T>(request);
                         }
+                        if(searchResponse.Total <= 0)
+                        {
+                            throw new Exception("Connection exception");
+                        }
                     }
                 }
                 if (!string.IsNullOrEmpty(scrollId) && scrollTime != null)
