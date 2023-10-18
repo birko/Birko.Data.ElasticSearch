@@ -12,5 +12,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)ElasticSearch\ElasticSearch.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Repositories\ElasticSearchRepository.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchStore.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Stores\Settings.cs" />
   </ItemGroup>
 </Project>

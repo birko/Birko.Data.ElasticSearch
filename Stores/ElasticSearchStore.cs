@@ -11,7 +11,7 @@ namespace Birko.Data.Stores
          where T : Models.AbstractModel
     {
         public ElasticClient Connector { get; private set; }
-        private Settings _settings = null;
+        private ElasticSearch.Stores.Settings _settings = null;
 
         private Dictionary<Guid, T> _insertList = null;
         private Dictionary<Guid, T> _updateList = null;
@@ -25,7 +25,7 @@ namespace Birko.Data.Stores
 
         public override void SetSettings(ISettings settings)
         {
-            if (settings is Settings sets)
+            if (settings is ElasticSearch.Stores.Settings sets)
             {
                 _settings = sets;
                 Connector = ElasticSearch.ElasticSearch.GetClient(_settings);
@@ -111,8 +111,10 @@ namespace Birko.Data.Stores
                 string scrollId;
                 int? size = request.Size;
                 int skip = 0;
+                var maxResultWindow = _settings.IndexSettings
+                    ?.FirstOrDefault(x => x.TypeName == typeof(T).FullName)?.MaxResultWindow ?? MaxResultWindow;
                 if ((request.From == null && request.Size == null)
-                   || ((request.Size ?? 0) + count) >= MaxResultWindow)
+                   || ((request.Size ?? 0) + count) >= maxResultWindow)
                 {
                     scrollTime = new Time(new TimeSpan(0, 1, 0));
                     request.Scroll = scrollTime;
@@ -260,7 +262,8 @@ namespace Birko.Data.Stores
         public string GetIndexName()
         {
             var type = typeof(T);
-            return string.Format("{0}_{1}", _settings.Name, type.Name).ToLower();
+            string indexName = _settings.IndexSettings?.FirstOrDefault(x => x.TypeName == type.FullName)?.Name ?? type.Name;
+            return $"{_settings.Name}_{indexName}".ToLower();
         }
 
         public override void Destroy()
