@@ -77,15 +77,7 @@ namespace Birko.Data.Stores
 
         public void DeleteIndex()
         {
-            DeleteIndex(typeof(T));
-        }
-
-        public void DeleteIndex(Type type)
-        {
-            if (type != null)
-            {
-                DeleteIndex(type.Name);
-            }
+            DeleteIndex(GetIndexName());
         }
 
         public void DeleteIndex(string name)
