@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Birko.Data.Stores.ElasticSearch
 {
-    public class Settings :Stores.Settings
+    public class Settings : Stores.Settings
     {
         public IEnumerable<IndexSettings> IndexSettings { get; set; }
     }

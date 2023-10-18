@@ -15,10 +15,10 @@ namespace Birko.Data.Repositories
 
         public virtual void BaseSettings(Stores.ISettings settings)
         {
-            if (settings is Stores.Settings setts)
+            if (settings is Stores.ElasticSearch.Settings setts)
             {
                 base.SetSettings(setts);
-                Store = Stores.StoreLocator.GetStore<Stores.ElasticSearchStore<TModel>, Stores.Settings>(setts);
+                Store = Stores.StoreLocator.GetStore<Stores.ElasticSearchStore<TModel>, Stores.ElasticSearch.Settings>(setts);
             }
         }
 
