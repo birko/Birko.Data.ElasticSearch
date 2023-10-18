@@ -1,4 +1,5 @@
-﻿using Nest;
+﻿using Birko.Data.ElasticSearch;
+using Nest;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,7 +12,7 @@ namespace Birko.Data.Stores
          where T : Models.AbstractModel
     {
         public ElasticClient Connector { get; private set; }
-        private ElasticSearch.Stores.Settings _settings = null;
+        private ElasticSearch.Settings _settings = null;
 
         private Dictionary<Guid, T> _insertList = null;
         private Dictionary<Guid, T> _updateList = null;
@@ -25,10 +26,10 @@ namespace Birko.Data.Stores
 
         public override void SetSettings(ISettings settings)
         {
-            if (settings is ElasticSearch.Stores.Settings sets)
+            if (settings is ElasticSearch.Settings sets)
             {
                 _settings = sets;
-                Connector = ElasticSearch.ElasticSearch.GetClient(_settings);
+                Connector = Data.ElasticSearch.ElasticSearch.GetClient(_settings);
                 _insertList = new Dictionary<Guid, T>();
                 _updateList = new Dictionary<Guid, T>();
                 _deleteList = new Dictionary<Guid, T>();
@@ -37,7 +38,7 @@ namespace Birko.Data.Stores
 
         public override long Count(Expression<Func<T, bool>> filter)
         {
-            return Count(ElasticSearch.ElasticSearch.ParseExpression(filter));
+            return Count(Data.ElasticSearch.ElasticSearch.ParseExpression(filter));
         }
 
         public long Count(QueryContainer query)
@@ -91,7 +92,7 @@ namespace Birko.Data.Stores
 
         public override void List(Expression<Func<T, bool>> filter, Action<T> listAction, int? limit = null, int? offset = null)
         {
-            List(ElasticSearch.ElasticSearch.ParseExpression(filter), listAction, limit, offset);
+            List(Data.ElasticSearch.ElasticSearch.ParseExpression(filter), listAction, limit, offset);
         }
 
         public void List(SearchRequest request, Action<T> listAction)

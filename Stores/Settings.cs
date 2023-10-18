@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Birko.Data.ElasticSearch.Stores
+namespace Birko.Data.Stores.ElasticSearch
 {
-    public class Settings : Data.Stores.Settings
+    public class Settings :Stores.Settings
     {
         public IEnumerable<IndexSettings> IndexSettings { get; set; }
     }
