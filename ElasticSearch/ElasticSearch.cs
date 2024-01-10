@@ -28,8 +28,7 @@ namespace Birko.Data.ElasticSearch
             return _clients[settings.GetId()];
         }
 
-
-        public static QueryBase ParseExpression(Expression expr, QueryBase parentQuery = null , Type exprType = null)
+        public static QueryBase ParseExpression(Expression? expr = null, QueryBase? parentQuery = null , Type? exprType = null)
         {
             if (expr != null)
             {
@@ -40,7 +39,7 @@ namespace Birko.Data.ElasticSearch
                 }
                 else if (expr is BinaryExpression binaryExpression)
                 {
-                    Nest.QueryBase q = null;
+                    Nest.QueryBase? q = null;
                     switch (binaryExpression.NodeType)
                     {
                         case ExpressionType.Add:
