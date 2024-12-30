@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Birko.Data.Repositories
 {
-    public abstract class ElasticSearchBulkRepository<TViewModel, TModel> 
+    public abstract class ElasticSearchBulkRepository<TViewModel, TModel>
         : AbstractBulkStoreRepository<TViewModel, TModel>
         where TModel : Models.AbstractModel, Models.ILoadable<TViewModel>
         where TViewModel : Models.ILoadable<TModel>
@@ -45,6 +45,10 @@ namespace Birko.Data.Repositories
             Stores.ElasticSearchStore<TModel>.MaxResultWindow = maxResultWindow;
             foreach (var item in (_store as Stores.ElasticSearchBulkStore<TModel>).Read(query, limit, offset))
             {
+                if (item == null)
+                {
+                    continue;
+                }
                 TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
                 result.LoadFrom(item);
                 StoreHash(item);
@@ -52,12 +56,16 @@ namespace Birko.Data.Repositories
             }
         }
 
-        public virtual IEnumerable<TViewModel> Read(Nest.SearchRequest request, Action<TViewModel> readAction, int maxResultWindow = 10000)
+        public virtual IEnumerable<TViewModel> Read(Nest.SearchRequest request, int maxResultWindow = 10000)
         {
             var _store = Store;
             Stores.ElasticSearchStore<TModel>.MaxResultWindow = maxResultWindow;
             foreach (var item in (_store as Stores.ElasticSearchBulkStore<TModel>).Read(request))
             {
+                if (item == null)
+                {
+                    continue;
+                }
                 TViewModel result = (TViewModel)Activator.CreateInstance(typeof(TViewModel), Array.Empty<object>());
                 result.LoadFrom(item);
                 StoreHash(item);

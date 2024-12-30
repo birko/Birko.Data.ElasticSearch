@@ -9,6 +9,7 @@
     <Import_RootNamespace>Birko.Data.ElasticSearch</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\EnumerableExtensions.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Repositories\ElasticSearchBulkRepository.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchBulkStore.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ElasticSearch\ElasticSearch.cs" />

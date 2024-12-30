@@ -93,6 +93,10 @@ namespace Birko.Data.Stores
             }
 
             var searchResponse = Connector.Search<T>(request);
+            if(searchResponse.OriginalException != null)
+            {
+                throw searchResponse.OriginalException;
+            }
             scrollId = searchResponse.ScrollId;
             long end = (size != null) ? (count + size ?? 12) : searchResponse.Total;
             if (end > searchResponse.Total)
@@ -156,7 +160,6 @@ namespace Birko.Data.Stores
             }
         }
 
-
         public IEnumerable<T> Read(QueryContainer query, int? limit = null, int? offset = null)
         {
             string indexName = GetIndexName();
@@ -169,7 +172,7 @@ namespace Birko.Data.Stores
             {
                 request.Query = query;
             }
-            foreach (T item in Read(request)) 
+            foreach (T item in Read(request))
             {
                 yield return item;
             }

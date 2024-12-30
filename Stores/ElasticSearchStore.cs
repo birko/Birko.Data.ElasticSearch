@@ -11,7 +11,7 @@ using System.Xml.Linq;
 
 namespace Birko.Data.Stores
 {
-    public class ElasticSearchStore<T> 
+    public class ElasticSearchStore<T>
         : AbstractStore<T>
         , ISettingsStore<ElasticSearch.Settings>
          where T : Models.AbstractModel
@@ -52,12 +52,13 @@ namespace Birko.Data.Stores
 
         public override T? ReadOne(Expression<Func<T, bool>>? filter = null)
         {
-            var searchResponse = Connector.Search<T>(new SearchRequest()
+            var query = new SearchRequest(GetIndexName())
             {
                 Size = 1,
                 From = 0,
                 Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
-            });
+            };
+            var searchResponse = Connector.Search<T>(query);
 
             return (searchResponse.Total > 0) ? searchResponse.Documents.FirstOrDefault() : null;
         }
