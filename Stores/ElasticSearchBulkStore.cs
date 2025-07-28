@@ -9,7 +9,9 @@ using System.Text;
 
 namespace Birko.Data.Stores
 {
-    public class ElasticSearchBulkStore<T> : ElasticSearchStore<T>, IBulkStore<T>
+    public class ElasticSearchBulkStore<T> 
+        : ElasticSearchStore<T>
+        , IBulkStore<T>
          where T : Models.AbstractModel
     {
         public ElasticSearchBulkStore() : base ()

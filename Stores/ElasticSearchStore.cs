@@ -13,6 +13,7 @@ namespace Birko.Data.Stores
 {
     public class ElasticSearchStore<T>
         : AbstractStore<T>
+        , ISettingsStore<ISettings>
         , ISettingsStore<ElasticSearch.Settings>
          where T : Models.AbstractModel
     {
@@ -25,13 +26,18 @@ namespace Birko.Data.Stores
         {
         }
 
-        public virtual void SetSettings(ElasticSearch.Settings settings)
+        public virtual void SetSettings(ISettings settings)
         {
             if (settings is ElasticSearch.Settings sets)
             {
                 _settings = sets;
                 Connector = Data.ElasticSearch.ElasticSearch.GetClient(_settings);
             }
+        }
+
+        public virtual void SetSettings(ElasticSearch.Settings settings)
+        {
+            SetSettings((ISettings)settings);
         }
 
         public override long Count(Expression<Func<T, bool>>? filter = null)
@@ -110,11 +116,10 @@ namespace Birko.Data.Stores
             DeleteIndex(GetIndexName());
         }
 
-        public void DeleteIndex(string name)
+        public void DeleteIndex(string indexName)
         {
-            if (!string.IsNullOrEmpty(name))
+            if (!string.IsNullOrEmpty(indexName))
             {
-                var indexName = string.Format("{0}_{1}", _settings.Name, name).ToLower();
                 _ = Connector.Indices.Delete(indexName);
             }
         }
