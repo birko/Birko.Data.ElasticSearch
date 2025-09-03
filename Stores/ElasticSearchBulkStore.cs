@@ -44,7 +44,7 @@ namespace Birko.Data.Stores
 
         protected void Bulk(IEnumerable<T>? create = null, IEnumerable<T>? update = null, IEnumerable<T>? delete = null)
         {
-            if(!((create?.Any() ?? false) && (update?.Any() ?? false) && (delete?.Any() ?? false)))
+            if (!(create?.Any() ?? false) && !(update?.Any() ?? false) && !(delete?.Any() ?? false))
             {
                 return;
             }
