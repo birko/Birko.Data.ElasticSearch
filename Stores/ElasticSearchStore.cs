@@ -1,13 +1,8 @@
 ﻿using Birko.Data.ElasticSearch;
 using Nest;
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
-using System.Security.Cryptography;
-using System.Text;
-using System.Xml.Linq;
 
 namespace Birko.Data.Stores
 {

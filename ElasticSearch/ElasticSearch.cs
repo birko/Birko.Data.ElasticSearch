@@ -1,317 +1,336 @@
 using Nest;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Xml.Linq;
 
 namespace Birko.Data.ElasticSearch
 {
     public static class ElasticSearch
     {
-        private static Dictionary<string, ElasticClient> _clients;
+        private static readonly ConcurrentDictionary<string, ElasticClient> _clients = new();
+        private static readonly ConcurrentDictionary<string, Func<object>> _expressionCache = new();
 
         public static ElasticClient GetClient(Stores.Settings settings)
         {
-            if (_clients == null)
-            {
-                _clients = new Dictionary<string, ElasticClient>();
-            }
-            if (!_clients.ContainsKey(settings.GetId()))
+            var settingsId = settings.GetId();
+            return _clients.GetOrAdd(settingsId, id =>
             {
                 var local = new Uri(settings.Location);
-                ConnectionSettings clientSettings = new ConnectionSettings(local)
-                        .DisableDirectStreaming();
-                _clients.Add(settings.GetId(), new ElasticClient(clientSettings));
-            }
-            return _clients[settings.GetId()];
+                var clientSettings = new ConnectionSettings(local)
+                    .DisableDirectStreaming();
+                return new ElasticClient(clientSettings);
+            });
         }
 
-        public static QueryBase ParseExpression(Expression? expr = null, Type? exprType = null, string fieldPrefix = null)
+        public static QueryBase? ParseExpression(Expression? expr = null, Type? exprType = null, string? fieldPrefix = null)
         {
-            if (expr != null)
+            return expr switch
             {
-                if (expr is LambdaExpression lambdaExpression)
-                {
-                    var type = lambdaExpression.Parameters?.FirstOrDefault()?.Type;
-                    return ParseExpression(lambdaExpression.Body, type, fieldPrefix);
-                }
-                else if (expr is BinaryExpression binaryExpression)
-                {
-                    switch (binaryExpression.NodeType)
-                    {
-                        case ExpressionType.Add:
-                        case ExpressionType.AddChecked:
-                            break;
-                        case ExpressionType.Subtract:
-                        case ExpressionType.SubtractChecked:
-                            break;
-                        case ExpressionType.Multiply:
-                        case ExpressionType.MultiplyChecked:
-                            break;
-                        case ExpressionType.Divide:
-                            break;
-                        case ExpressionType.Modulo:
-                            break;
-                        case ExpressionType.GreaterThan:
-                            {
-                                var tq1 = (ITermQuery)ParseExpression(binaryExpression.Left, exprType, fieldPrefix);
-                                var tq2 = (ITermQuery)ParseExpression(binaryExpression.Right, exprType, fieldPrefix);
-                                var value = tq2?.Value ?? tq1.Value;
-                                return new NumericRangeQuery()
-                                {
-                                    Field = tq1?.Field ?? tq2.Field,
-                                    GreaterThan = value != null ? Convert.ToDouble(value) : null
-                                };
-                            }
-                        case ExpressionType.GreaterThanOrEqual:
-                            {
-                                var tq1 = (ITermQuery)ParseExpression(binaryExpression.Left, exprType, fieldPrefix);
-                                var tq2 = (ITermQuery)ParseExpression(binaryExpression.Right, exprType, fieldPrefix);
-                                var value = tq2?.Value ?? tq1.Value;
-                                return new NumericRangeQuery()
-                                {
-                                    Field = tq1?.Field ?? tq2.Field,
-                                    GreaterThanOrEqualTo = value != null ? Convert.ToDouble(value) : null
-                                };
-                            }
-                        case ExpressionType.LessThan:
-                            {
-                                var tq1 = (ITermQuery)ParseExpression(binaryExpression.Left, exprType, fieldPrefix);
-                                var tq2 = (ITermQuery)ParseExpression(binaryExpression.Right, exprType, fieldPrefix);
-                                var value = tq2?.Value ?? tq1.Value;
-                                return new NumericRangeQuery()
-                                {
-                                    Field = tq1?.Field ?? tq2.Field,
-                                    LessThan = value != null ? Convert.ToDouble(value) : null
-                                };
-                            }
-                        case ExpressionType.LessThanOrEqual:
-                            {
-                                var tq1 = (ITermQuery)ParseExpression(binaryExpression.Left, exprType, fieldPrefix);
-                                var tq2 = (ITermQuery)ParseExpression(binaryExpression.Right, exprType, fieldPrefix);
-                                var value = tq2?.Value ?? tq1.Value;
-                                return new NumericRangeQuery()
-                                {
-                                    Field = tq1?.Field ?? tq2.Field,
-                                    LessThanOrEqualTo = value != null ? Convert.ToDouble(value) : null
-                                };
-                            }
-                        case ExpressionType.Equal:
-                            {
-                                var tq1 = (ITermQuery)ParseExpression(binaryExpression.Left, exprType, fieldPrefix);
-                                var tq2 = (ITermQuery)ParseExpression(binaryExpression.Right, exprType, fieldPrefix);
-                                return new TermQuery()
-                                {
-                                    Field = tq1?.Field ?? tq2.Field,
-                                    Value = tq2?.Value ?? tq1.Value,
-                                };
-                            }
-                        case ExpressionType.NotEqual:
-                            {
-                                var tq1 = (ITermQuery)ParseExpression(binaryExpression.Left, exprType, fieldPrefix);
-                                var tq2 = (ITermQuery)ParseExpression(binaryExpression.Right, exprType, fieldPrefix);
-                                return new BoolQuery()
-                                {
-                                    MustNot = new QueryContainer[] {
-                                        new TermQuery() {
-                                            Field = tq1?.Field ?? tq2.Field,
-                                            Value = tq2?.Value ?? tq1.Value,
-                                        }
-                                    }
-                                };
-                            }
-                        case ExpressionType.And:
-                            break;
-                        case ExpressionType.Or:
-                            break;
-                        case ExpressionType.AndAlso:
-                            return new BoolQuery()
-                            {
-                                Must = new[] {
-                                    ParseExpression(binaryExpression.Left, exprType, fieldPrefix),
-                                    ParseExpression(binaryExpression.Right, exprType, fieldPrefix)
-                                }.Where(x => x != null).Select(x => new QueryContainer(x))
-                            };
-                        case ExpressionType.OrElse:
-                            return new BoolQuery()
-                            {
-                                Should = new[] {
-                                    ParseExpression(binaryExpression.Left, exprType, fieldPrefix),
-                                    ParseExpression(binaryExpression.Right, exprType, fieldPrefix)
-                                }.Where(x => x != null).Select(x => new QueryContainer(x))
-                            };
-                    }
-                }
-                else if (expr is MethodCallExpression callExpression)
-                {
-                    if (callExpression.Method.Name == "Property")
-                    {
-                        if (callExpression.Arguments.LastOrDefault() is ConstantExpression propertyName)
-                        {
-                            var termQuery = new TermQuery();
-                            var name = (string)propertyName.Value;
-                            name = name.First().ToString().ToLower() + name[1..];
-                            if (!string.IsNullOrEmpty(fieldPrefix))
-                            {
-                                name = $"{fieldPrefix}.{name}";
-                            }
-                            termQuery.Field = name;
-                            return termQuery;
-                        }
-                    }
-                    if (callExpression.Method.Name == "IsNullOrEmpty")
-                    {
-                        var field = (ITermQuery)ParseExpression(callExpression.Arguments.First(), exprType, fieldPrefix);
-                        return new BoolQuery
-                        {
-                            MustNot = new[]
-                            {
-                                new QueryContainer(new WildcardQuery() {
-                                    Field = field.Field,
-                                    Value = "*"
-                                })
-                            }
-                        };
-                    }
-                    if (callExpression.Method.Name == "StartsWith")
-                    {
-                        var q = new PrefixQuery();
-                        var field = (ITermQuery)ParseExpression(callExpression.Object, exprType, fieldPrefix);
-                        var val = (ITermQuery)ParseExpression(callExpression.Arguments.First(), exprType, fieldPrefix);
-                        return new PrefixQuery
-                        {
-                            Field = field.Field,
-                            Value = val.Value,
-                        };
-                    }
-                    if (callExpression.Method.Name == "EndsWith")
-                    {
-                        //var q = new ();
-                        //var field = ParseExpression(callExpression.Object, exprType, fieldPrefix);
-                        //var val = ParseExpression(callExpression.Arguments.First(), exprType, fieldPrefix);
-                        //return q;
-                    }
-                    if (callExpression.Method.Name == "Contains")
-                    {
-                        var field = (ITermQuery)ParseExpression(callExpression.Object, exprType, fieldPrefix);
-                        var val = (ITermQuery)ParseExpression(callExpression.Arguments.First(), exprType, fieldPrefix);
-                        return new QueryStringQuery()
-                        {
-                            DefaultField = field.Field,
-                            Query = (string)val.Value
-                        };
-                    }
-                    if (callExpression.Method.Name == "MultiMatch")
-                    {
-                        var termQuery = (ITermQuery)ParseExpression(callExpression.Arguments.Last(), exprType, fieldPrefix);
-                        return new Nest.MultiMatchQuery()
-                        {
-                            Query = (string)termQuery.Value,
-                            Fields = (callExpression.Arguments.First() as NewArrayExpression).Expressions
-                                .Select(m => ((TermQuery)ParseExpression(m, exprType))?.Field).ToArray()
-                        };
-                    }
-                    if (callExpression.Method.Name == "Any")
-                    {
-                        var termQuery = (ITermQuery)ParseExpression(callExpression.Arguments.First(), exprType, fieldPrefix);
-                        var nestQuery = new NestedQuery
-                        {
-                            Path = termQuery.Field,
-                            Query = ParseExpression(callExpression.Arguments.Last(), exprType, termQuery.Field.Name)
-                        };
-                        return nestQuery;
-                    }
+                null => null,
+                LambdaExpression lambda => ParseLambda(lambda, fieldPrefix),
+                BinaryExpression binary => ParseBinary(binary, exprType, fieldPrefix),
+                MethodCallExpression method => ParseMethodCall(method, exprType, fieldPrefix),
+                MemberExpression member => ParseMember(member, exprType, fieldPrefix),
+                UnaryExpression unary => ParseUnary(unary, exprType, fieldPrefix),
+                ConstantExpression constant => ParseConstant(constant),
+                _ => null
+            };
+        }
 
-                    var f = Expression.Lambda(callExpression).Compile();
-                    var value = f.DynamicInvoke();
-                    return new TermQuery()
+        private static QueryBase? ParseLambda(LambdaExpression lambda, string? fieldPrefix)
+        {
+            var type = lambda.Parameters.FirstOrDefault()?.Type;
+            return ParseExpression(lambda.Body, type, fieldPrefix);
+        }
+
+        private static QueryBase? ParseBinary(BinaryExpression binary, Type? exprType, string? fieldPrefix)
+        {
+            switch (binary.NodeType)
+            {
+                case ExpressionType.AndAlso:
                     {
-                        Value = value
-                    };
-                }
-                else if (expr is MemberExpression memberExpression)
-                {
-                    if (
-                        exprType != null
-                        && memberExpression.Member.ReflectedType.IsAssignableFrom(exprType)
-                        && (memberExpression.Expression.NodeType == ExpressionType.Parameter || memberExpression.Expression.NodeType == ExpressionType.TypeAs)
-                    )
-                    {
-                        var name = memberExpression.Member.Name;
-                        name = name.First().ToString().ToLower() + name[1..];
-                        if (memberExpression.Type == typeof(string) && !name.EndsWith(".keyword"))
-                        {
-                            name += ".keyword";
-                        }
-                        if (!string.IsNullOrEmpty(fieldPrefix))
-                        {
-                            name = $"{fieldPrefix}.{name}";
-                        }
-                        return new TermQuery()
-                        {
-                            Field = name
-                        };
+                        var leftQuery = ParseExpression(binary.Left, exprType, fieldPrefix);
+                        var rightQuery = ParseExpression(binary.Right, exprType, fieldPrefix);
+                        var queries = new List<QueryContainer>(2);
+                        if (leftQuery != null) queries.Add(new(leftQuery));
+                        if (rightQuery != null) queries.Add(new(rightQuery));
+                        return queries.Count > 0 ? new BoolQuery { Must = queries } : null;
                     }
-                    if (memberExpression.Expression is ConstantExpression constantExpression)
+                case ExpressionType.OrElse:
                     {
-                        Type type = constantExpression.Value.GetType();
-                        var value = type.InvokeMember(memberExpression.Member.Name, BindingFlags.GetField | BindingFlags.GetProperty, null, constantExpression.Value, null);
-                        return new TermQuery()
-                        {
-                            Value = value,
-                        };
+                        var leftQuery = ParseExpression(binary.Left, exprType, fieldPrefix);
+                        var rightQuery = ParseExpression(binary.Right, exprType, fieldPrefix);
+                        var queries = new List<QueryContainer>(2);
+                        if (leftQuery != null) queries.Add(new(leftQuery));
+                        if (rightQuery != null) queries.Add(new(rightQuery));
+                        return queries.Count > 0 ? new BoolQuery { Should = queries } : null;
                     }
-                    else if (memberExpression is MemberExpression memberExpression1)
-                    {
-                        var f = Expression.Lambda(memberExpression).Compile();
-                        var value = f.DynamicInvoke();
-                        return new TermQuery()
-                        {
-                            Value = value,
-                        };
-                    }
-                    else if (memberExpression.Expression != null)
-                    {
-                        return ParseExpression(memberExpression.Expression, null, fieldPrefix); // not resending type here
-                    }
-                    else
-                    {
-                        var f = Expression.Lambda(memberExpression).Compile();
-                        var value = f.DynamicInvoke();
-                        return new TermQuery()
-                        {
-                            Value = value,
-                        };
-                    }
-                }
-                else if (expr is UnaryExpression unaryExpression)
-                {
-                    if (unaryExpression.NodeType == ExpressionType.Convert)
-                    {
-                        return ParseExpression(unaryExpression.Operand, exprType, fieldPrefix);
-                    }
-                    if (unaryExpression.NodeType == ExpressionType.Not)
-                    {
-                        return new BoolQuery()
-                        {
-                            MustNot = new QueryContainer[] {
-                                ParseExpression(unaryExpression.Operand, exprType, fieldPrefix)
-                            }
-                        };
-                    }
-                }
-                else if (expr is ConstantExpression constantExpression)
-                {
-                    var value = constantExpression.Value;
-                    return new TermQuery()
-                    {
-                        Value = value,
-                    };
-                }
+                default:
+                    return ParseComparison(binary, exprType, fieldPrefix);
             }
-            return null;
+        }
+
+        private static QueryBase? ParseComparison(BinaryExpression binary, Type? exprType, string? fieldPrefix)
+        {
+            var left = ParseExpression(binary.Left, exprType, fieldPrefix) as ITermQuery;
+            var right = ParseExpression(binary.Right, exprType, fieldPrefix) as ITermQuery;
+
+            var field = left?.Field ?? right?.Field;
+            var value = right?.Value ?? left?.Value;
+
+            if (field == null || value == null)
+                return null;
+
+            double? doubleValue = TryConvertToDouble(value);
+
+            return binary.NodeType switch
+            {
+                ExpressionType.GreaterThan => new NumericRangeQuery { Field = field, GreaterThan = doubleValue },
+                ExpressionType.GreaterThanOrEqual => new NumericRangeQuery { Field = field, GreaterThanOrEqualTo = doubleValue },
+                ExpressionType.LessThan => new NumericRangeQuery { Field = field, LessThan = doubleValue },
+                ExpressionType.LessThanOrEqual => new NumericRangeQuery { Field = field, LessThanOrEqualTo = doubleValue },
+                ExpressionType.Equal => new TermQuery { Field = field, Value = value },
+                ExpressionType.NotEqual => new BoolQuery
+                {
+                    MustNot = new QueryContainer[] { new TermQuery { Field = field, Value = value } }
+                },
+                _ => null
+            };
+        }
+
+        private static double? TryConvertToDouble(object value)
+        {
+            if (value == null)
+                return null;
+
+            try
+            {
+                return Convert.ToDouble(value);
+            }
+            catch (InvalidCastException)
+            {
+                return null;
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+            catch (OverflowException)
+            {
+                return null;
+            }
+        }
+
+        private static QueryBase? ParseMethodCall(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        {
+            return call.Method.Name switch
+            {
+                "Property" when call.Arguments.LastOrDefault() is ConstantExpression propName =>
+                    new TermQuery { Field = FormatFieldName(propName.Value as string, fieldPrefix) },
+
+                "IsNullOrEmpty" =>
+                    ParseIsNullOrEmpty(call, exprType, fieldPrefix),
+
+                "StartsWith" =>
+                    ParseStartsWith(call, exprType, fieldPrefix),
+
+                "Contains" =>
+                    ParseContains(call, exprType, fieldPrefix),
+
+                "MultiMatch" =>
+                    ParseMultiMatch(call, exprType, fieldPrefix),
+
+                "Any" =>
+                    ParseAny(call, exprType, fieldPrefix),
+
+                _ => new TermQuery { Value = EvaluateExpression(call) }
+            };
+        }
+
+        private static QueryBase? ParseIsNullOrEmpty(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        {
+            var field = ParseExpression(call.Arguments.First(), exprType, fieldPrefix) as ITermQuery;
+            if (field?.Field == null)
+                return null;
+
+            return new BoolQuery
+            {
+                MustNot = new[] { new QueryContainer(new WildcardQuery { Field = field.Field, Value = "*" }) }
+            };
+        }
+
+        private static QueryBase? ParseStartsWith(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        {
+            var swField = ParseExpression(call.Object, exprType, fieldPrefix) as ITermQuery;
+            var swVal = ParseExpression(call.Arguments.First(), exprType, fieldPrefix) as ITermQuery;
+
+            if (swField?.Field == null || swVal?.Value == null)
+                return null;
+
+            return new PrefixQuery { Field = swField.Field, Value = swVal.Value };
+        }
+
+        private static QueryBase? ParseContains(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        {
+            var cField = ParseExpression(call.Object, exprType, fieldPrefix) as ITermQuery;
+            var cVal = ParseExpression(call.Arguments.First(), exprType, fieldPrefix) as ITermQuery;
+
+            if (cField?.Field == null || cVal?.Value == null)
+                return null;
+
+            return new QueryStringQuery { DefaultField = cField.Field, Query = (string)cVal.Value };
+        }
+
+        private static QueryBase? ParseMultiMatch(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        {
+            var mmVal = ParseExpression(call.Arguments.Last(), exprType, fieldPrefix) as ITermQuery;
+            if (mmVal?.Value == null)
+                return null;
+
+            var fields = (call.Arguments.First() as NewArrayExpression)?.Expressions
+                .Select(m => (ParseExpression(m, exprType, fieldPrefix) as ITermQuery)?.Field)
+                .Where(f => f != null)
+                .ToArray();
+
+            if (fields == null || fields.Length == 0)
+                return null;
+
+            return new MultiMatchQuery { Query = (string)mmVal.Value, Fields = fields };
+        }
+
+        private static QueryBase? ParseAny(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        {
+            var anyField = ParseExpression(call.Arguments.First(), exprType, fieldPrefix) as ITermQuery;
+            if (anyField?.Field == null)
+                return null;
+
+            var query = ParseExpression(call.Arguments.Last(), exprType, anyField.Field.Name);
+            if (query == null)
+                return null;
+
+            return new NestedQuery
+            {
+                Path = anyField.Field,
+                Query = query
+            };
+        }
+
+        private static QueryBase? ParseMember(MemberExpression member, Type? exprType, string? fieldPrefix)
+        {
+            // Direct member access (e.g., x => x.Name)
+            if (exprType != null && IsDirectMemberOfParameter(member, exprType))
+            {
+                var name = FormatFieldName(member.Member.Name, fieldPrefix);
+                if (name == null)
+                    return null;
+
+                // Add .keyword suffix for string fields if not already present
+                if (member.Type == typeof(string) && !name.EndsWith(".keyword", StringComparison.OrdinalIgnoreCase))
+                {
+                    name += ".keyword";
+                }
+                return new TermQuery { Field = name };
+            }
+
+            // Constant or closure member access (e.g., x => x.Name == localVariable)
+            if (member.Expression is ConstantExpression || member.Expression == null)
+            {
+                var value = EvaluateExpression(member);
+                return value != null ? new TermQuery { Value = value } : null;
+            }
+
+            // Try to evaluate, otherwise recurse
+            try
+            {
+                var value = EvaluateExpression(member);
+                return value != null ? new TermQuery { Value = value } : null;
+            }
+            catch
+            {
+                return ParseExpression(member.Expression, null, fieldPrefix);
+            }
+        }
+
+        private static QueryBase? ParseUnary(UnaryExpression unary, Type? exprType, string? fieldPrefix)
+        {
+            return unary.NodeType switch
+            {
+                ExpressionType.Convert => ParseExpression(unary.Operand, exprType, fieldPrefix),
+                ExpressionType.Not => ParseNot(unary, exprType, fieldPrefix),
+                _ => null
+            };
+        }
+
+        private static QueryBase? ParseNot(UnaryExpression unary, Type? exprType, string? fieldPrefix)
+        {
+            var operandQuery = ParseExpression(unary.Operand, exprType, fieldPrefix);
+            if (operandQuery == null)
+                return null;
+
+            return new BoolQuery
+            {
+                MustNot = new QueryContainer[] { new(operandQuery) }
+            };
+        }
+
+        private static QueryBase? ParseConstant(ConstantExpression constant)
+        {
+            return constant.Value != null ? new TermQuery { Value = constant.Value } : null;
+        }
+
+        private static bool IsDirectMemberOfParameter(MemberExpression member, Type type)
+        {
+            return type != null &&
+                   member.Member.ReflectedType != null &&
+                   member.Member.ReflectedType.IsAssignableFrom(type) &&
+                   member.Expression != null &&
+                   (member.Expression.NodeType == ExpressionType.Parameter ||
+                    member.Expression.NodeType == ExpressionType.TypeAs);
+        }
+
+        private static string? FormatFieldName(string? name, string? prefix)
+        {
+            if (string.IsNullOrEmpty(name))
+                return null;
+
+            // Convert to camelCase efficiently using string.Create
+            var camel = string.Create(name.Length, name, (chars, source) =>
+            {
+                chars[0] = char.ToLowerInvariant(source[0]);
+                for (int i = 1; i < source.Length; i++)
+                {
+                    chars[i] = source[i];
+                }
+            });
+
+            return string.IsNullOrEmpty(prefix) ? camel : $"{prefix}.{camel}";
+        }
+
+        private static object? EvaluateExpression(Expression expr)
+        {
+            if (expr is ConstantExpression c)
+                return c.Value;
+
+            if (expr is MemberExpression m && m.Expression is ConstantExpression mc)
+            {
+                if (m.Member is FieldInfo fi)
+                    return fi.GetValue(mc.Value);
+                if (m.Member is PropertyInfo pi)
+                    return pi.GetValue(mc.Value);
+            }
+
+            // Use expression string as cache key (Expression doesn't implement GetHashCode/Equals)
+            var cacheKey = expr.ToString();
+            var func = _expressionCache.GetOrAdd(cacheKey, _ =>
+            {
+                var lambda = Expression.Lambda(expr);
+                return (Func<object>)lambda.Compile();
+            });
+
+            return func.DynamicInvoke();
         }
     }
 }
