@@ -1,45 +1,97 @@
-﻿using System;
+using Birko.Data.ElasticSearch.Stores;
+using Birko.Data.Repositories;
+using Birko.Data.Stores;
+using System;
 using System.Collections.Generic;
-using System.Text;
 
-namespace Birko.Data.Repositories
+namespace Birko.Data.ElasticSearch.Repositories
 {
-    public abstract class ElasticSearchRepository<TViewModel, TModel> : AbstractStoreRepository<TViewModel, TModel>
+    /// <summary>
+    /// ElasticSearch repository with bulk operations support.
+    /// Inherits from AbstractBulkRepository to provide bulk operations via ElasticSearch's _bulk API.
+    /// </summary>
+    /// <typeparam name="TViewModel">The type of view model.</typeparam>
+    /// <typeparam name="TModel">The type of data model.</typeparam>
+    public abstract class ElasticSearchRepository<TViewModel, TModel> : AbstractBulkRepository<TViewModel, TModel>
         where TModel : Models.AbstractModel, Models.ILoadable<TViewModel>
         where TViewModel : Models.ILoadable<TModel>
     {
-        public ElasticSearchRepository() : base()
-        {
+        #region Properties
 
-        }
+        /// <summary>
+        /// Gets the ElasticSearch store.
+        /// </summary>
+        public ElasticSearchStore<TModel>? ElasticSearchStore => Store as ElasticSearchStore<TModel>;
 
-        public virtual void BaseSettings(Stores.ISettings settings)
+        #endregion
+
+        #region Constructors and Initialization
+        /// <summary>
+        /// Initializes a new instance with dependency injection support.
+        /// </summary>
+        /// <param name="store">The ElasticSearch store to use.</param>
+        public ElasticSearchRepository(IStore<TModel>? store)
+            : base((ElasticSearchStore<TModel>?)store)
         {
-            if (settings is Stores.ElasticSearch.Settings setts)
+            if (store is not null && store is not ElasticSearchStore<TModel>)
             {
-                base.SetSettings(setts);
-                Store = Stores.StoreLocator.GetStore<Stores.ElasticSearchStore<TModel>, Stores.ElasticSearch.Settings>(setts);
+                throw new ArgumentException(
+                    "Store must be of type ElasticSearchStore<TModel> or null.",
+                    nameof(store));
             }
         }
 
-        public override void SetSettings(Stores.ISettings settings)
-        {
-            if (settings is Stores.Settings setts)
-            {
-                BaseSettings(setts);
-                Store?.Init();
-            }
-        }
+        #endregion
 
+        #region Query and Count Operations
+
+        /// <summary>
+        /// Counts documents matching the specified query container.
+        /// </summary>
+        /// <param name="query">The query container to match.</param>
+        /// <returns>The count of matching documents.</returns>
         public virtual long Count(Nest.QueryContainer query)
         {
             var _store = Store;
-            return (_store as Stores.ElasticSearchStore<TModel>)?.Count(query) ?? 0;
+            return (_store as ElasticSearchStore<TModel>)?.Count(query) ?? 0;
         }
 
-        public void ClearCache() {
+        #endregion
+
+        #region Index Management
+
+        /// <summary>
+        /// Clears the cache for the ElasticSearch index.
+        /// </summary>
+        public void ClearCache()
+        {
             var _store = Store;
-            (_store as Stores.ElasticSearchStore<TModel>)?.ClearCache();
+            (_store as ElasticSearchStore<TModel>)?.ClearCache();
         }
+
+        #endregion
+
+        #region Advanced Read Operations
+
+        /// <summary>
+        /// Reads documents using a custom search request.
+        /// Note: This method requires implementation using ReadStream from the store.
+        /// </summary>
+        /// <param name="request">The search request.</param>
+        /// <returns>A collection of matching view models.</returns>
+        public virtual IEnumerable<TViewModel> Read(Nest.SearchRequest request)
+        {
+            if (ElasticSearchStore == null)
+            {
+                yield break;
+            }
+
+            foreach (var item in ElasticSearchStore.ReadStream(request))
+            {
+                yield return LoadInstance(item);
+            }
+        }
+
+        #endregion
     }
 }

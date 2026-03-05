@@ -10,8 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Extensions\EnumerableExtensions.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Repositories\ElasticSearchBulkRepository.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchBulkStore.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Repositories\AsyncElasticSearchRepository.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Stores\AsyncElasticSearchStore.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ElasticSearch\ElasticSearch.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Repositories\ElasticSearchRepository.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchStore.cs" />

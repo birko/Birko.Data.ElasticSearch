@@ -1,19 +1,51 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Text;
 
-namespace Birko.Data.Stores.ElasticSearch
+namespace Birko.Data.ElasticSearch.Stores
 {
-    public class Settings 
-        : Stores.Settings
+    /// <summary>
+    /// ElasticSearch-specific settings for store configuration.
+    /// Extends the base <see cref="Data.Stores.Settings"/> with index configuration.
+    /// </summary>
+    public class Settings
+        : Data.Stores.Settings
     {
+        #region Properties
+
+        /// <summary>
+        /// Gets or sets the index-specific settings for different entity types.
+        /// </summary>
         public IEnumerable<IndexSettings> IndexSettings { get; set; }
+
+        #endregion
     }
 
+    /// <summary>
+    /// Configuration settings for a specific ElasticSearch index.
+    /// </summary>
     public class IndexSettings
     {
+        #region Properties
+
+        /// <summary>
+        /// Gets or sets the full type name for the entity.
+        /// Used to map CLR types to ElasticSearch indices.
+        /// </summary>
         public string TypeName { get; set; }
+
+        /// <summary>
+        /// Gets or sets the custom name for the index.
+        /// If not specified, the type name will be used.
+        /// </summary>
         public string Name { get; set; }
+
+        /// <summary>
+        /// Gets or sets the maximum result window for the index.
+        /// This controls the maximum value of <c>from + size</c> for searches.
+        /// Default is 10,000.
+        /// </summary>
         public int? MaxResultWindow { get; set; }
+
+        #endregion
     }
 }

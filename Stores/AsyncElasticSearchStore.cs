@@ -4,38 +4,32 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Birko.Data.ElasticSearch.Stores
 {
     /// <summary>
-    /// ElasticSearch data store for CRUD operations.
-    /// Use <see cref="ElasticSearchBulkStore{T}"/> for bulk operations support.
-    /// This store provides basic CRUD operations.
+    /// Async ElasticSearch data store for CRUD and bulk operations.
     /// </summary>
     /// <typeparam name="T">The type of entity, must inherit from <see cref="Models.AbstractModel"/>.</typeparam>
-    public class ElasticSearchStore<T>
-        : AbstractBulkStore<T>
-         where T : Models.AbstractModel
+    public class AsyncElasticSearchStore<T> : AbstractAsyncBulkStore<T>
+        where T : Models.AbstractModel
     {
         /// <summary>
         /// Gets the ElasticClient instance.
         /// </summary>
-        public ElasticClient Connector { get; internal set; }
+        public ElasticClient? Connector { get; private set; }
 
         /// <summary>
         /// The settings for this store.
         /// </summary>
-        internal Settings? _settings = null;
+        protected Stores.Settings? _settings = null;
 
         /// <summary>
         /// The maximum result window for queries.
         /// </summary>
         public static int MaxResultWindow { get; set; } = 10000;
-
-        // <summary>
-        /// Maximum size for bulk operations.
-        /// </summary>
-        public static readonly int MaxBulkSize = 10000;
 
         /// <summary>
         /// Default scroll time for large result sets.
@@ -45,22 +39,50 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Constructors and Initialization
 
         /// <summary>
-        /// Initializes a new instance of the ElasticSearchStore class.
+        /// Initializes a new instance of the AsyncElasticSearchStore class.
         /// </summary>
-        public ElasticSearchStore() : base()
+        public AsyncElasticSearchStore()
         {
+        }
+
+        /// <summary>
+        /// Sets the connection settings.
+        /// </summary>
+        /// <param name="settings">The settings to use.</param>
+        public virtual void SetSettings(ISettings settings)
+        {
+            if (settings is Stores.Settings sets)
+            {
+                _settings = sets;
+                Connector = Data.ElasticSearch.ElasticSearch.GetClient(_settings);
+                Store = new ElasticSearchStore<T> { Connector = Connector, _settings = _settings };
+            }
+        }
+
+        /// <summary>
+        /// Sets the connection settings.
+        /// </summary>
+        /// <param name="settings">The ElasticSearch settings to use.</param>
+        public virtual void SetSettings(Stores.Settings settings)
+        {
+            SetSettings((ISettings)settings);
         }
 
         /// <summary>
         /// Initializes the index with a custom descriptor.
         /// </summary>
         /// <param name="indexDescriptor">The index descriptor.</param>
-        public void Init(Func<CreateIndexDescriptor, ICreateIndexRequest> indexDescriptor)
+        /// <param name="ct">Cancellation token.</param>
+        public async Task InitAsync(Func<CreateIndexDescriptor, ICreateIndexRequest> indexDescriptor, CancellationToken ct = default)
         {
+            if (Connector == null) return;
+
             var indexName = GetIndexName();
-            if (!Connector.Indices.Exists(indexName).Exists)
+            var existsResponse = await Connector.Indices.ExistsAsync(indexName, null, ct);
+
+            if (!existsResponse.Exists)
             {
-                var response = Connector.Indices.Create(indexName, indexDescriptor);
+                var response = await Connector.Indices.CreateAsync(indexName, indexDescriptor, ct);
 
                 if (!response.IsValid || response.OriginalException != null)
                 {
@@ -72,11 +94,9 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override void Init()
+        public override Task InitAsync(CancellationToken ct = default)
         {
-            Init(cid =>
-                cid.Map<T>(m => m.AutoMap())
-            );
+            return Task.Run(() => Store?.Init(), ct);
         }
 
         #endregion
@@ -84,127 +104,95 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Core CRUD Operations - Single Item
 
         /// <inheritdoc />
-        public override void Create(T data, StoreDataDelegate<T>? storeDelegate = null)
+        public override async Task CreateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
-            if (data != null)
+            if (Connector == null || data == null)
             {
-                data.Guid = Guid.NewGuid();
-                storeDelegate?.Invoke(data);
+                return;
+            }
 
-                try
-                {
-                    var indexName = GetIndexName();
-                    var response = Connector.Create(data, i => i.Id(data.Guid).Index(indexName));
+            data.Guid = Guid.NewGuid();
+            storeDelegate?.Invoke(data);
 
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"ElasticSearch create failed. Index: {indexName}, Guid: {data.Guid}. " +
-                            $"DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to create document in ElasticSearch", ex);
-                }
+            var indexName = GetIndexName();
+            var response = await Connector.CreateAsync(data, i => i.Id(data.Guid).Index(indexName), ct);
+
+            if (!response.IsValid || response.OriginalException != null)
+            {
+                throw new InvalidOperationException(
+                    $"ElasticSearch create failed. Index: {indexName}, Guid: {data.Guid}. " +
+                    $"DebugInfo: {response.DebugInformation}",
+                    response.OriginalException);
             }
         }
 
         /// <inheritdoc />
-        public override T? Read(Expression<Func<T, bool>>? filter = null)
+        public override async Task<T?> ReadAsync(Expression<Func<T, bool>>? filter = null, CancellationToken ct = default)
         {
-            try
+            if (Connector == null)
             {
-                var indexName = GetIndexName();
-                var query = new SearchRequest(indexName)
-                {
-                    Size = 1,
-                    From = 0,
-                    Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
-                };
-                var searchResponse = Connector.Search<T>(query);
-
-                if (!searchResponse.IsValid || searchResponse.OriginalException != null)
-                {
-                    throw new InvalidOperationException(
-                        $"ElasticSearch query failed. Index: {indexName}. DebugInfo: {searchResponse.DebugInformation}",
-                        searchResponse.OriginalException);
-                }
-
-                return (searchResponse.Total > 0) ? searchResponse.Documents.FirstOrDefault() : null;
+                return null;
             }
-            catch (Exception ex) when (ex is InvalidOperationException)
+
+            var indexName = GetIndexName();
+            var query = new SearchRequest(indexName)
             {
-                throw;
+                Size = 1,
+                From = 0,
+                Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
+            };
+
+            var searchResponse = await Connector.SearchAsync<T>(query, ct);
+
+            if (!searchResponse.IsValid || searchResponse.OriginalException != null)
+            {
+                throw new InvalidOperationException(
+                    $"ElasticSearch query failed. Index: {indexName}. DebugInfo: {searchResponse.DebugInformation}",
+                    searchResponse.OriginalException);
             }
-            catch (Exception ex)
+
+            return (searchResponse.Total > 0) ? searchResponse.Documents.FirstOrDefault() : null;
+        }
+
+        /// <inheritdoc />
+        public override async Task UpdateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
+        {
+            if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty)
             {
-                throw new InvalidOperationException($"Failed to read from ElasticSearch", ex);
+                return;
+            }
+
+            storeDelegate?.Invoke(data);
+
+            var indexName = GetIndexName();
+            var response = await Connector.UpdateAsync<T, T>(data.Guid, (i) => i.Index(indexName).Doc(data), ct);
+
+            if (!response.IsValid || response.OriginalException != null)
+            {
+                throw new InvalidOperationException(
+                    $"ElasticSearch update failed. Index: {indexName}, Guid: {data.Guid}. " +
+                    $"DebugInfo: {response.DebugInformation}",
+                    response.OriginalException);
             }
         }
 
         /// <inheritdoc />
-        public override void Update(T data, StoreDataDelegate<T>? storeDelegate = null)
+        public override async Task DeleteAsync(T data, CancellationToken ct = default)
         {
-            if (data != null && data.Guid != null && data.Guid != Guid.Empty)
+            if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty)
             {
-                storeDelegate?.Invoke(data);
-
-                try
-                {
-                    var indexName = GetIndexName();
-                    var response = Connector.Update<T, T>(data.Guid, (i) => i.Index(indexName).Doc(data));
-
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"ElasticSearch update failed. Index: {indexName}, Guid: {data.Guid}. " +
-                            $"DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to update document in ElasticSearch", ex);
-                }
+                return;
             }
-        }
 
-        /// <inheritdoc />
-        public override void Delete(T data)
-        {
-            if (data != null && data.Guid != null && data.Guid != Guid.Empty)
+            var indexName = GetIndexName();
+            var response = await Connector.DeleteAsync<T>(data.Guid, (i) => i.Index(indexName), ct);
+
+            if (!response.IsValid || response.OriginalException != null)
             {
-                try
-                {
-                    var indexName = GetIndexName();
-                    var response = Connector.Delete<T>(data.Guid, (i) => i.Index(indexName));
-
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"ElasticSearch delete failed. Index: {indexName}, Guid: {data.Guid}. " +
-                            $"DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to delete document from ElasticSearch", ex);
-                }
+                throw new InvalidOperationException(
+                    $"ElasticSearch delete failed. Index: {indexName}, Guid: {data.Guid}. " +
+                    $"DebugInfo: {response.DebugInformation}",
+                    response.OriginalException);
             }
         }
 
@@ -212,7 +200,45 @@ namespace Birko.Data.ElasticSearch.Stores
 
         #region Core CRUD Operations - Bulk
 
-        public override void Create(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null)
+        /// <inheritdoc />
+        public async Task<IEnumerable<T>> ReadAsync(CancellationToken ct = default)
+        {
+            if (Connector == null)
+            {
+                return await Task.FromResult(Enumerable.Empty<T>());
+            }
+
+            var indexName = GetIndexName();
+            var query = new SearchRequest(indexName)
+            {
+                Size = Math.Min(MaxResultWindow, 1000),
+                From = 0
+            };
+
+            var searchResponse = await Connector.SearchAsync<T>(query, ct);
+
+            if (!searchResponse.IsValid || searchResponse.OriginalException != null)
+            {
+                throw new InvalidOperationException(
+                    $"ElasticSearch query failed. Index: {indexName}. DebugInfo: {searchResponse.DebugInformation}",
+                    searchResponse.OriginalException);
+            }
+
+            return await Task.FromResult(searchResponse.Documents);
+        }
+
+        public override async Task<IEnumerable<T>> ReadAsync(Expression<Func<T, bool>>? filter = null, int? limit = null, int? offset = null, CancellationToken ct = default)
+        {
+            var results = new List<T>();
+            await foreach (var item in ReadStreamAsync(filter, limit, offset, ct))
+            {
+                results.Add(item);
+            }
+            return results;
+        }
+
+        /// <inheritdoc />
+        public override async Task CreateAsync(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
             if (data == null || Connector == null) return;
 
@@ -226,18 +252,11 @@ namespace Birko.Data.ElasticSearch.Stores
                 return x;
             });
 
-            Bulk(itemsToCreate, null, null);
+            await BulkAsync(itemsToCreate, null, null, ct);
         }
 
-        public override IEnumerable<T> Read(Expression<Func<T, bool>>? filter = null, int? limit = null, int? offset = null)
-        {
-            foreach (var item in ReadStream(filter, limit, offset))
-            {
-                yield return item;
-            }
-        }
-
-        public override void Update(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null)
+        /// <inheritdoc />
+        public override async Task UpdateAsync(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
             if (data == null || Connector == null) return;
 
@@ -247,15 +266,16 @@ namespace Birko.Data.ElasticSearch.Stores
                 return x;
             });
 
-            Bulk(null, itemsToUpdate, null);
+            await BulkAsync(null, itemsToUpdate, null, ct);
         }
 
-        public override void Delete(IEnumerable<T> data)
+        /// <inheritdoc />
+        public override async Task DeleteAsync(IEnumerable<T> data, CancellationToken ct = default)
         {
             if (data == null || Connector == null) return;
 
             var itemsToDelete = data.Where(x => x != null && x.Guid != null && x.Guid != Guid.Empty);
-            Bulk(null, null, itemsToDelete);
+            await BulkAsync(null, null, itemsToDelete, ct);
         }
 
         /// <summary>
@@ -265,10 +285,11 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <param name="update">Items to update.</param>
         /// <param name="delete">Items to delete.</param>
         /// <param name="ct">Cancellation token.</param>
-        protected void Bulk(
+        protected async Task BulkAsync(
             IEnumerable<T>? create = null,
             IEnumerable<T>? update = null,
-            IEnumerable<T>? delete = null)
+            IEnumerable<T>? delete = null,
+            CancellationToken ct = default)
         {
             var createList = create?.ToList() ?? Enumerable.Empty<T>();
             var updateList = update?.ToList() ?? Enumerable.Empty<T>();
@@ -281,15 +302,15 @@ namespace Birko.Data.ElasticSearch.Stores
 
             // Check bulk size limit
             var totalCount = createList.Count() + updateList.Count() + deleteList.Count();
-            if (totalCount > MaxBulkSize)
+            if (totalCount > ElasticSearchStore<T>.MaxBulkSize)
             {
                 throw new ArgumentException(
-                    $"Bulk operation size ({totalCount}) exceeds maximum allowed size ({MaxBulkSize}). " +
+                    $"Bulk operation size ({totalCount}) exceeds maximum allowed size ({ElasticSearchStore<T>.MaxBulkSize}). " +
                     $"Please split into smaller batches.");
             }
 
             var indexName = GetIndexName();
-            var bulkResponse = Connector!.Bulk(b =>
+            var bulkResponse = await Connector!.BulkAsync(b =>
             {
                 if (createList.Any())
                 {
@@ -304,7 +325,7 @@ namespace Birko.Data.ElasticSearch.Stores
                     b = b.DeleteMany<T>(deleteList, (i, o) => i.Id(o.Guid).Index(indexName));
                 }
                 return b;
-            });
+            }, ct);
 
             if (bulkResponse == null)
             {
@@ -335,18 +356,24 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Query and Count Operations
 
         /// <inheritdoc />
-        public override long Count(Expression<Func<T, bool>>? filter = null)
+        public override async Task<long> CountAsync(Expression<Func<T, bool>>? filter = null, CancellationToken ct = default)
         {
-            return Count(filter != null ? Data.ElasticSearch.ElasticSearch.ParseExpression(filter) : null);
+            return await CountAsync(filter != null ? Data.ElasticSearch.ElasticSearch.ParseExpression(filter) : null, ct);
         }
 
         /// <summary>
-        /// Counts documents matching the specified query.
+        /// Asynchronously counts documents matching the specified query.
         /// </summary>
         /// <param name="query">The query to match.</param>
+        /// <param name="ct">Cancellation token.</param>
         /// <returns>The count of matching documents.</returns>
-        public long Count(QueryContainer? query)
+        public async Task<long> CountAsync(QueryContainer? query, CancellationToken ct = default)
         {
+            if (Connector == null)
+            {
+                return 0;
+            }
+
             var indexName = GetIndexName();
             var request = new CountRequest(indexName);
             if (query != null)
@@ -354,38 +381,30 @@ namespace Birko.Data.ElasticSearch.Stores
                 request.Query = query;
             }
 
-            try
+            var response = await Connector.CountAsync(request, ct);
+
+            if (!response.IsValid || response.OriginalException != null)
             {
-                var response = Connector.Count(request);
-                if (!response.IsValid || response.OriginalException != null)
-                {
-                    throw new InvalidOperationException(
-                        $"ElasticSearch count failed. Index: {indexName}. DebugInfo: {response.DebugInformation}",
-                        response.OriginalException);
-                }
-                return response.Count;
+                throw new InvalidOperationException(
+                    $"ElasticSearch count failed. Index: {indexName}. DebugInfo: {response.DebugInformation}",
+                    response.OriginalException);
             }
-            catch (Exception ex) when (ex is InvalidOperationException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Failed to count documents in index {indexName}", ex);
-            }
+
+            return response.Count;
         }
 
         /// <summary>
         /// Streaming version of ReadAsync for large result sets.
         /// Use this for memory-efficient processing of large datasets.
         /// </summary>
-        public IEnumerable<T> ReadStream(
+        public async IAsyncEnumerable<T> ReadStreamAsync(
             Expression<Func<T, bool>>? filter = null,
             int? limit = null,
-            int? offset = null)
+            int? offset = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             var query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter);
-            foreach (var item in ReadStream(query, limit, offset))
+            await foreach (var item in ReadStreamAsync(query, limit, offset, ct))
             {
                 yield return item;
             }
@@ -399,10 +418,11 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <param name="offset">Number of results to skip.</param>
         /// <param name="ct">Cancellation token.</param>
         /// <returns>An async stream of matching documents.</returns>
-        public IEnumerable<T> ReadStream(
+        public async IAsyncEnumerable<T> ReadStreamAsync(
             QueryContainer? query,
             int? limit = null,
-            int? offset = null)
+            int? offset = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             if (Connector == null)
             {
@@ -420,7 +440,7 @@ namespace Birko.Data.ElasticSearch.Stores
                 request.Query = query;
             }
 
-            foreach (var item in ReadStream(request))
+            await foreach (var item in ReadStreamAsync(request, ct))
             {
                 yield return item;
             }
@@ -432,7 +452,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <param name="request">The search request.</param>
         /// <param name="ct">Cancellation token.</param>
         /// <returns>An async stream of documents matching the query.</returns>
-        public IEnumerable<T> ReadStream(SearchRequest request)
+        public async IAsyncEnumerable<T> ReadStreamAsync(SearchRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             if (request == null || Connector == null)
             {
@@ -465,7 +485,7 @@ namespace Birko.Data.ElasticSearch.Stores
                     }
                 }
 
-                var searchResponse = Connector.Search<T>(request);
+                var searchResponse = await Connector.SearchAsync<T>(request, ct);
 
                 if (!searchResponse.IsValid || searchResponse.OriginalException != null)
                 {
@@ -510,10 +530,12 @@ namespace Birko.Data.ElasticSearch.Stores
                         yield break;
                     }
 
+                    ct.ThrowIfCancellationRequested();
+
                     // Fetch next page
                     if (!string.IsNullOrEmpty(scrollId) && scrollTime != null)
                     {
-                        searchResponse = Connector.Scroll<T>(new Nest.ScrollRequest(scrollId, scrollTime));
+                        searchResponse = await Connector.ScrollAsync<T>(new Nest.ScrollRequest(scrollId, scrollTime), ct);
 
                         if (!searchResponse.IsValid || searchResponse.OriginalException != null)
                         {
@@ -527,7 +549,7 @@ namespace Birko.Data.ElasticSearch.Stores
                     else
                     {
                         request.From = count;
-                        searchResponse = Connector.Search<T>(request);
+                        searchResponse = await Connector.SearchAsync<T>(request, ct);
 
                         if (!searchResponse.IsValid || searchResponse.OriginalException != null)
                         {
@@ -550,7 +572,7 @@ namespace Birko.Data.ElasticSearch.Stores
                 {
                     try
                     {
-                        Connector.ClearScroll(new Nest.ClearScrollRequest(scrollId));
+                        await Connector.ClearScrollAsync(new Nest.ClearScrollRequest(scrollId), ct);
                     }
                     catch
                     {
@@ -583,10 +605,7 @@ namespace Birko.Data.ElasticSearch.Stores
             var type = typeof(T);
             string indexName = _settings.IndexSettings?.FirstOrDefault(x => x.TypeName == type.FullName)?.Name ?? type.Name;
 
-            // Sanitize index name according to ElasticSearch rules:
-            // - Must be lowercase
-            // - Cannot start with _, -, +
-            // - Cannot contain spaces, #, \, /, *, ?, ", <, >, |, `, commas
+            // Sanitize index name according to ElasticSearch rules
             var sanitizedIndexName = $"{_settings.Name}_{indexName}"
                 .ToLower()
                 .Trim()
@@ -625,72 +644,48 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <summary>
         /// Deletes the index for this store.
         /// </summary>
-        public void DeleteIndex()
+        /// <param name="ct">Cancellation token.</param>
+        public async Task DeleteIndexAsync(CancellationToken ct = default)
         {
-            DeleteIndex(GetIndexName());
-        }
+            if (Connector == null) return;
 
-        /// <summary>
-        /// Deletes the specified index.
-        /// </summary>
-        /// <param name="indexName">The name of the index to delete.</param>
-        public void DeleteIndex(string indexName)
-        {
-            if (!string.IsNullOrEmpty(indexName))
+            var indexName = GetIndexName();
+            var response = await Connector.Indices.DeleteAsync(indexName, null, ct);
+
+            if (!response.IsValid && response.OriginalException != null)
             {
-                try
-                {
-                    var response = Connector.Indices.Delete(indexName);
-
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"Failed to delete index {indexName}. DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to delete index {indexName}", ex);
-                }
+                throw new InvalidOperationException(
+                    $"Failed to delete index {indexName}. DebugInfo: {response.DebugInformation}",
+                    response.OriginalException);
             }
         }
 
         /// <summary>
         /// Clears the cache for the index.
         /// </summary>
-        public void ClearCache()
+        /// <param name="ct">Cancellation token.</param>
+        public async Task ClearCacheAsync(CancellationToken ct = default)
         {
-            var indexName = GetIndexName();
-            try
-            {
-                var response = Connector.Indices.ClearCache(indexName);
+            if (Connector == null) return;
 
-                if (!response.IsValid && response.OriginalException != null)
-                {
-                    throw new InvalidOperationException(
-                        $"Failed to clear cache for index {indexName}. DebugInfo: {response.DebugInformation}",
-                        response.OriginalException);
-                }
-            }
-            catch (Exception ex) when (ex is InvalidOperationException)
+            var indexName = GetIndexName();
+            var response = await Connector.Indices.ClearCacheAsync(indexName, null, ct);
+
+            if (!response.IsValid && response.OriginalException != null)
             {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Failed to clear cache for index {indexName}", ex);
+                throw new InvalidOperationException(
+                    $"Failed to clear cache for index {indexName}. DebugInfo: {response.DebugInformation}",
+                    response.OriginalException);
             }
         }
 
         /// <inheritdoc />
-        public override void Destroy()
+        public override async Task DestroyAsync(CancellationToken ct = default)
         {
-            DeleteIndex();
+            if (Connector != null && Store is ElasticSearchStore<T> esStore)
+            {
+                await Task.Run(() => esStore.DeleteIndex(), ct);
+            }
         }
 
         #endregion
@@ -700,12 +695,15 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <summary>
         /// Checks if the ElasticSearch cluster is healthy.
         /// </summary>
+        /// <param name="ct">Cancellation token.</param>
         /// <returns>True if the cluster is healthy, false otherwise.</returns>
-        public bool IsHealthy()
+        public async Task<bool> IsHealthyAsync(CancellationToken ct = default)
         {
+            if (Connector == null) return false;
+
             try
             {
-                var healthResponse = Connector.Cluster.Health();
+                var healthResponse = await Connector.Cluster.HealthAsync(null, ct);
                 return healthResponse.IsValid;
             }
             catch
