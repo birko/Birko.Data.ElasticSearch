@@ -1,20 +1,21 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
     <HasSharedItems>true</HasSharedItems>
-    <SharedGUID>c26d00f1-e1c7-4eae-8cb9-8c39398a7846</SharedGUID>
+    <SharedGUID>2b3c4d5e-6f7a-8901-2bcd-ef3456789012</SharedGUID>
   </PropertyGroup>
   <PropertyGroup Label="Configuration">
     <Import_RootNamespace>Birko.Data.ElasticSearch</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Extensions\EnumerableExtensions.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Repositories\AsyncElasticSearchRepository.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\AsyncElasticSearchStore.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ElasticSearch\ElasticSearch.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Repositories\ElasticSearchRepository.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Repositories\ElasticSearchModelRepository.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Repositories\AsyncElasticSearchModelRepository.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchStore.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\Settings.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)UnitOfWork\ElasticSearchUnitOfWork.cs" />
   </ItemGroup>
 </Project>

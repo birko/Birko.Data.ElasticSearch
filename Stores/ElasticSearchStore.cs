@@ -15,32 +15,19 @@ namespace Birko.Data.ElasticSearch.Stores
     /// <typeparam name="T">The type of entity, must inherit from <see cref="Models.AbstractModel"/>.</typeparam>
     public class ElasticSearchStore<T>
         : AbstractBulkStore<T>
+        , ISettingsStore<Settings>
          where T : Models.AbstractModel
     {
         /// <summary>
         /// Gets the ElasticClient instance.
         /// </summary>
-        public ElasticClient Connector { get; internal set; }
+        public ElasticClient? Connector { get; private set; }
 
         /// <summary>
         /// The settings for this store.
         /// </summary>
-        internal Settings? _settings = null;
+        protected Settings? _settings = null;
 
-        /// <summary>
-        /// The maximum result window for queries.
-        /// </summary>
-        public static int MaxResultWindow { get; set; } = 10000;
-
-        // <summary>
-        /// Maximum size for bulk operations.
-        /// </summary>
-        public static readonly int MaxBulkSize = 10000;
-
-        /// <summary>
-        /// Default scroll time for large result sets.
-        /// </summary>
-        public static TimeSpan DefaultScrollTime { get; set; } = TimeSpan.FromMinutes(1);
 
         #region Constructors and Initialization
 
@@ -49,6 +36,28 @@ namespace Birko.Data.ElasticSearch.Stores
         /// </summary>
         public ElasticSearchStore() : base()
         {
+        }
+
+        /// <summary>
+        /// Sets the connection settings for this store.
+        /// </summary>
+        /// <param name="settings">The settings to apply.</param>
+        public virtual void SetSettings(ISettings settings)
+        {
+            if (settings is Settings sets)
+            {
+                _settings = sets;
+                Connector = Data.ElasticSearch.ElasticSearch.GetClient(_settings);
+            }
+        }
+
+        /// <summary>
+        /// Sets the connection settings for this store.
+        /// </summary>
+        /// <param name="settings">The ElasticSearch settings to apply.</param>
+        public virtual void SetSettings(Settings settings)
+        {
+            SetSettings((ISettings)settings);
         }
 
         /// <summary>
@@ -84,35 +93,39 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Core CRUD Operations - Single Item
 
         /// <inheritdoc />
-        public override void Create(T data, StoreDataDelegate<T>? storeDelegate = null)
+        public override Guid Create(T data, StoreDataDelegate<T>? storeDelegate = null)
         {
-            if (data != null)
+            if (data == null)
             {
-                data.Guid = Guid.NewGuid();
-                storeDelegate?.Invoke(data);
+                return Guid.Empty;
+            }
 
-                try
-                {
-                    var indexName = GetIndexName();
-                    var response = Connector.Create(data, i => i.Id(data.Guid).Index(indexName));
+            data.Guid ??= Guid.NewGuid();
+            storeDelegate?.Invoke(data);
 
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"ElasticSearch create failed. Index: {indexName}, Guid: {data.Guid}. " +
-                            $"DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException)
+            try
+            {
+                var indexName = GetIndexName();
+                var response = Connector.Create(data, i => i.Id(data.Guid).Index(indexName));
+
+                if (!response.IsValid || response.OriginalException != null)
                 {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to create document in ElasticSearch", ex);
+                    throw new InvalidOperationException(
+                        $"ElasticSearch create failed. Index: {indexName}, Guid: {data.Guid}. " +
+                        $"DebugInfo: {response.DebugInformation}",
+                        response.OriginalException);
                 }
             }
+            catch (Exception ex) when (ex is InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to create document in ElasticSearch", ex);
+            }
+
+            return data.Guid.Value;
         }
 
         /// <inheritdoc />
@@ -229,9 +242,9 @@ namespace Birko.Data.ElasticSearch.Stores
             Bulk(itemsToCreate, null, null);
         }
 
-        public override IEnumerable<T> Read(Expression<Func<T, bool>>? filter = null, int? limit = null, int? offset = null)
+        public override IEnumerable<T> Read(Expression<Func<T, bool>>? filter = null, OrderBy<T>? orderBy = null, int? limit = null, int? offset = null)
         {
-            foreach (var item in ReadStream(filter, limit, offset))
+            foreach (var item in ReadStream(filter, orderBy, limit, offset))
             {
                 yield return item;
             }
@@ -281,10 +294,10 @@ namespace Birko.Data.ElasticSearch.Stores
 
             // Check bulk size limit
             var totalCount = createList.Count() + updateList.Count() + deleteList.Count();
-            if (totalCount > MaxBulkSize)
+            if (totalCount > Data.ElasticSearch.ElasticSearch.MaxBulkSize)
             {
                 throw new ArgumentException(
-                    $"Bulk operation size ({totalCount}) exceeds maximum allowed size ({MaxBulkSize}). " +
+                    $"Bulk operation size ({totalCount}) exceeds maximum allowed size ({Data.ElasticSearch.ElasticSearch.MaxBulkSize}). " +
                     $"Please split into smaller batches.");
             }
 
@@ -381,11 +394,12 @@ namespace Birko.Data.ElasticSearch.Stores
         /// </summary>
         public IEnumerable<T> ReadStream(
             Expression<Func<T, bool>>? filter = null,
+            OrderBy<T>? orderBy = null,
             int? limit = null,
             int? offset = null)
         {
             var query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter);
-            foreach (var item in ReadStream(query, limit, offset))
+            foreach (var item in ReadStream(query, orderBy, limit, offset))
             {
                 yield return item;
             }
@@ -401,6 +415,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <returns>An async stream of matching documents.</returns>
         public IEnumerable<T> ReadStream(
             QueryContainer? query,
+            OrderBy<T>? orderBy = null,
             int? limit = null,
             int? offset = null)
         {
@@ -418,6 +433,19 @@ namespace Birko.Data.ElasticSearch.Stores
             if (query != null)
             {
                 request.Query = query;
+            }
+            if (orderBy != null && orderBy.Fields.Count > 0)
+            {
+                var sorts = new List<ISort>();
+                foreach (var field in orderBy.Fields)
+                {
+                    sorts.Add(new FieldSort
+                    {
+                        Field = field.PropertyName,
+                        Order = field.Descending ? SortOrder.Descending : SortOrder.Ascending
+                    });
+                }
+                request.Sort = sorts;
             }
 
             foreach (var item in ReadStream(request))
@@ -449,13 +477,13 @@ namespace Birko.Data.ElasticSearch.Stores
             {
                 var indexName = GetIndexName();
                 var maxResultWindow = _settings?.IndexSettings
-                    ?.FirstOrDefault(x => x.TypeName == typeof(T).FullName)?.MaxResultWindow ?? MaxResultWindow;
+                    ?.FirstOrDefault(x => x.TypeName == typeof(T).FullName)?.MaxResultWindow ?? Data.ElasticSearch.ElasticSearch.MaxResultWindow;
 
                 // Determine if we need to use scrolling
                 if ((request.From == null && request.Size == null)
                    || ((request.Size ?? 0) + count) >= maxResultWindow)
                 {
-                    scrollTime = new Time(DefaultScrollTime);
+                    scrollTime = new Time(Data.ElasticSearch.ElasticSearch.DefaultScrollTime);
                     request.Scroll = scrollTime;
                     request.Size = Math.Min(request.Size ?? 1000, 1000);
                     request.From = null;

@@ -8,11 +8,11 @@ namespace Birko.Data.ElasticSearch.Repositories
 {
     /// <summary>
     /// ElasticSearch repository with bulk operations support.
-    /// Inherits from AbstractBulkRepository to provide bulk operations via ElasticSearch's _bulk API.
+    /// Inherits from AbstractBulkViewModelRepository to provide bulk operations via ElasticSearch's _bulk API.
     /// </summary>
     /// <typeparam name="TViewModel">The type of view model.</typeparam>
     /// <typeparam name="TModel">The type of data model.</typeparam>
-    public abstract class ElasticSearchRepository<TViewModel, TModel> : AbstractBulkRepository<TViewModel, TModel>
+    public abstract class ElasticSearchRepository<TViewModel, TModel> : AbstractBulkViewModelRepository<TViewModel, TModel>
         where TModel : Models.AbstractModel, Models.ILoadable<TViewModel>
         where TViewModel : Models.ILoadable<TModel>
     {
@@ -20,8 +20,9 @@ namespace Birko.Data.ElasticSearch.Repositories
 
         /// <summary>
         /// Gets the ElasticSearch store.
+        /// This works with wrapped stores (e.g., tenant wrappers).
         /// </summary>
-        public ElasticSearchStore<TModel>? ElasticSearchStore => Store as ElasticSearchStore<TModel>;
+        public ElasticSearchStore<TModel>? ElasticSearchStore => Store?.GetUnwrappedStore<TModel, ElasticSearchStore<TModel>>();
 
         #endregion
 
@@ -29,15 +30,20 @@ namespace Birko.Data.ElasticSearch.Repositories
         /// <summary>
         /// Initializes a new instance with dependency injection support.
         /// </summary>
-        /// <param name="store">The ElasticSearch store to use.</param>
+        /// <param name="store">The ElasticSearch store to use. Can be wrapped (e.g., by tenant wrappers).</param>
         public ElasticSearchRepository(IStore<TModel>? store)
-            : base((ElasticSearchStore<TModel>?)store)
+            : base(null)
         {
-            if (store is not null && store is not ElasticSearchStore<TModel>)
+            if (store != null && !store.IsStoreOfType<TModel, ElasticSearchStore<TModel>>())
             {
                 throw new ArgumentException(
-                    "Store must be of type ElasticSearchStore<TModel> or null.",
+                    "Store must be of type ElasticSearchStore<TModel> or a wrapper around it (e.g., TenantStoreWrapper).",
                     nameof(store));
+            }
+            // Set the store after validation - base constructor handles null by creating default
+            if (store != null)
+            {
+                Store = store;
             }
         }
 

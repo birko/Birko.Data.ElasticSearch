@@ -10,6 +10,21 @@ namespace Birko.Data.ElasticSearch
 {
     public static class ElasticSearch
     {
+        /// <summary>
+        /// The maximum result window for queries.
+        /// </summary>
+        public static int MaxResultWindow { get; set; } = 10000;
+
+        /// <summary>
+        /// Maximum size for bulk operations.
+        /// </summary>
+        public static readonly int MaxBulkSize = 10000;
+
+        /// <summary>
+        /// Default scroll time for large result sets.
+        /// </summary>
+        public static TimeSpan DefaultScrollTime { get; set; } = TimeSpan.FromMinutes(1);
+
         private static readonly ConcurrentDictionary<string, ElasticClient> _clients = new();
         private static readonly ConcurrentDictionary<string, Func<object>> _expressionCache = new();
 

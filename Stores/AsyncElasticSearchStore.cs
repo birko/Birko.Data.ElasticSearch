@@ -13,7 +13,9 @@ namespace Birko.Data.ElasticSearch.Stores
     /// Async ElasticSearch data store for CRUD and bulk operations.
     /// </summary>
     /// <typeparam name="T">The type of entity, must inherit from <see cref="Models.AbstractModel"/>.</typeparam>
-    public class AsyncElasticSearchStore<T> : AbstractAsyncBulkStore<T>
+    public class AsyncElasticSearchStore<T>
+        : AbstractAsyncBulkStore<T>
+        , ISettingsStore<Settings>
         where T : Models.AbstractModel
     {
         /// <summary>
@@ -26,15 +28,6 @@ namespace Birko.Data.ElasticSearch.Stores
         /// </summary>
         protected Stores.Settings? _settings = null;
 
-        /// <summary>
-        /// The maximum result window for queries.
-        /// </summary>
-        public static int MaxResultWindow { get; set; } = 10000;
-
-        /// <summary>
-        /// Default scroll time for large result sets.
-        /// </summary>
-        public static TimeSpan DefaultScrollTime { get; set; } = TimeSpan.FromMinutes(1);
 
         #region Constructors and Initialization
 
@@ -55,7 +48,6 @@ namespace Birko.Data.ElasticSearch.Stores
             {
                 _settings = sets;
                 Connector = Data.ElasticSearch.ElasticSearch.GetClient(_settings);
-                Store = new ElasticSearchStore<T> { Connector = Connector, _settings = _settings };
             }
         }
 
@@ -96,7 +88,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override Task InitAsync(CancellationToken ct = default)
         {
-            return Task.Run(() => Store?.Init(), ct);
+            return InitAsync(cid => cid.Map<T>(m => m.AutoMap()), ct);
         }
 
         #endregion
@@ -104,14 +96,14 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Core CRUD Operations - Single Item
 
         /// <inheritdoc />
-        public override async Task CreateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
+        public override async Task<Guid> CreateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
             if (Connector == null || data == null)
             {
-                return;
+                return Guid.Empty;
             }
 
-            data.Guid = Guid.NewGuid();
+            data.Guid ??= Guid.NewGuid();
             storeDelegate?.Invoke(data);
 
             var indexName = GetIndexName();
@@ -124,6 +116,8 @@ namespace Birko.Data.ElasticSearch.Stores
                     $"DebugInfo: {response.DebugInformation}",
                     response.OriginalException);
             }
+
+            return data.Guid.Value;
         }
 
         /// <inheritdoc />
@@ -201,7 +195,7 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Core CRUD Operations - Bulk
 
         /// <inheritdoc />
-        public async Task<IEnumerable<T>> ReadAsync(CancellationToken ct = default)
+        public override async Task<IEnumerable<T>> ReadAsync(CancellationToken ct = default)
         {
             if (Connector == null)
             {
@@ -211,7 +205,7 @@ namespace Birko.Data.ElasticSearch.Stores
             var indexName = GetIndexName();
             var query = new SearchRequest(indexName)
             {
-                Size = Math.Min(MaxResultWindow, 1000),
+                Size = Math.Min(Data.ElasticSearch.ElasticSearch.MaxResultWindow, 1000),
                 From = 0
             };
 
@@ -227,10 +221,10 @@ namespace Birko.Data.ElasticSearch.Stores
             return await Task.FromResult(searchResponse.Documents);
         }
 
-        public override async Task<IEnumerable<T>> ReadAsync(Expression<Func<T, bool>>? filter = null, int? limit = null, int? offset = null, CancellationToken ct = default)
+        public override async Task<IEnumerable<T>> ReadAsync(Expression<Func<T, bool>>? filter = null, OrderBy<T>? orderBy = null, int? limit = null, int? offset = null, CancellationToken ct = default)
         {
             var results = new List<T>();
-            await foreach (var item in ReadStreamAsync(filter, limit, offset, ct))
+            await foreach (var item in ReadStreamAsync(filter, orderBy, limit, offset, ct))
             {
                 results.Add(item);
             }
@@ -302,10 +296,10 @@ namespace Birko.Data.ElasticSearch.Stores
 
             // Check bulk size limit
             var totalCount = createList.Count() + updateList.Count() + deleteList.Count();
-            if (totalCount > ElasticSearchStore<T>.MaxBulkSize)
+            if (totalCount > Data.ElasticSearch.ElasticSearch.MaxBulkSize)
             {
                 throw new ArgumentException(
-                    $"Bulk operation size ({totalCount}) exceeds maximum allowed size ({ElasticSearchStore<T>.MaxBulkSize}). " +
+                    $"Bulk operation size ({totalCount}) exceeds maximum allowed size ({Data.ElasticSearch.ElasticSearch.MaxBulkSize}). " +
                     $"Please split into smaller batches.");
             }
 
@@ -399,12 +393,13 @@ namespace Birko.Data.ElasticSearch.Stores
         /// </summary>
         public async IAsyncEnumerable<T> ReadStreamAsync(
             Expression<Func<T, bool>>? filter = null,
+            OrderBy<T>? orderBy = null,
             int? limit = null,
             int? offset = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             var query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter);
-            await foreach (var item in ReadStreamAsync(query, limit, offset, ct))
+            await foreach (var item in ReadStreamAsync(query, orderBy, limit, offset, ct))
             {
                 yield return item;
             }
@@ -420,6 +415,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <returns>An async stream of matching documents.</returns>
         public async IAsyncEnumerable<T> ReadStreamAsync(
             QueryContainer? query,
+            OrderBy<T>? orderBy = null,
             int? limit = null,
             int? offset = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
@@ -438,6 +434,19 @@ namespace Birko.Data.ElasticSearch.Stores
             if (query != null)
             {
                 request.Query = query;
+            }
+            if (orderBy != null && orderBy.Fields.Count > 0)
+            {
+                var sorts = new List<ISort>();
+                foreach (var field in orderBy.Fields)
+                {
+                    sorts.Add(new FieldSort
+                    {
+                        Field = field.PropertyName,
+                        Order = field.Descending ? SortOrder.Descending : SortOrder.Ascending
+                    });
+                }
+                request.Sort = sorts;
             }
 
             await foreach (var item in ReadStreamAsync(request, ct))
@@ -469,13 +478,13 @@ namespace Birko.Data.ElasticSearch.Stores
             {
                 var indexName = GetIndexName();
                 var maxResultWindow = _settings?.IndexSettings
-                    ?.FirstOrDefault(x => x.TypeName == typeof(T).FullName)?.MaxResultWindow ?? MaxResultWindow;
+                    ?.FirstOrDefault(x => x.TypeName == typeof(T).FullName)?.MaxResultWindow ?? Data.ElasticSearch.ElasticSearch.MaxResultWindow;
 
                 // Determine if we need to use scrolling
                 if ((request.From == null && request.Size == null)
                    || ((request.Size ?? 0) + count) >= maxResultWindow)
                 {
-                    scrollTime = new Time(DefaultScrollTime);
+                    scrollTime = new Time(Data.ElasticSearch.ElasticSearch.DefaultScrollTime);
                     request.Scroll = scrollTime;
                     request.Size = Math.Min(request.Size ?? 1000, 1000);
                     request.From = null;
@@ -682,10 +691,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task DestroyAsync(CancellationToken ct = default)
         {
-            if (Connector != null && Store is ElasticSearchStore<T> esStore)
-            {
-                await Task.Run(() => esStore.DeleteIndex(), ct);
-            }
+            await DeleteIndexAsync(ct);
         }
 
         #endregion
