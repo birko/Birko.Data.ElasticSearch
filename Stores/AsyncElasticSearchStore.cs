@@ -98,10 +98,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task<Guid> CreateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
-            if (Connector == null || data == null)
-            {
-                return Guid.Empty;
-            }
+            if (Connector == null || data == null) return Guid.Empty;
 
             data.Guid ??= Guid.NewGuid();
             storeDelegate?.Invoke(data);
@@ -123,10 +120,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task<T?> ReadAsync(Expression<Func<T, bool>>? filter = null, CancellationToken ct = default)
         {
-            if (Connector == null)
-            {
-                return null;
-            }
+            if (Connector == null) return null;
 
             var indexName = GetIndexName();
             var query = new SearchRequest(indexName)
@@ -151,10 +145,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task UpdateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
-            if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty)
-            {
-                return;
-            }
+            if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty) return;
 
             storeDelegate?.Invoke(data);
 
@@ -173,10 +164,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task DeleteAsync(T data, CancellationToken ct = default)
         {
-            if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty)
-            {
-                return;
-            }
+            if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty) return;
 
             var indexName = GetIndexName();
             var response = await Connector.DeleteAsync<T>(data.Guid, (i) => i.Index(indexName), ct);
@@ -197,10 +185,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task<IEnumerable<T>> ReadAsync(CancellationToken ct = default)
         {
-            if (Connector == null)
-            {
-                return await Task.FromResult(Enumerable.Empty<T>());
-            }
+            if (Connector == null) return Enumerable.Empty<T>();
 
             var indexName = GetIndexName();
             var query = new SearchRequest(indexName)
@@ -363,10 +348,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <returns>The count of matching documents.</returns>
         public async Task<long> CountAsync(QueryContainer? query, CancellationToken ct = default)
         {
-            if (Connector == null)
-            {
-                return 0;
-            }
+            if (Connector == null) return 0;
 
             var indexName = GetIndexName();
             var request = new CountRequest(indexName);
@@ -420,10 +402,7 @@ namespace Birko.Data.ElasticSearch.Stores
             int? offset = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            if (Connector == null)
-            {
-                yield break;
-            }
+            if (Connector == null) yield break;
 
             var indexName = GetIndexName();
             SearchRequest request = new SearchRequest(indexName)
@@ -463,10 +442,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <returns>An async stream of documents matching the query.</returns>
         public async IAsyncEnumerable<T> ReadStreamAsync(SearchRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            if (request == null || Connector == null)
-            {
-                yield break;
-            }
+            if (request == null || Connector == null) yield break;
 
             string? scrollId = null;
             Time? scrollTime = null;

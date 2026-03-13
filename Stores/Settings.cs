@@ -15,7 +15,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <summary>
         /// Gets or sets the index-specific settings for different entity types.
         /// </summary>
-        public IEnumerable<IndexSettings> IndexSettings { get; set; }
+        public IEnumerable<IndexSettings> IndexSettings { get; set; } = null!;
 
         #endregion
     }
@@ -31,13 +31,13 @@ namespace Birko.Data.ElasticSearch.Stores
         /// Gets or sets the full type name for the entity.
         /// Used to map CLR types to ElasticSearch indices.
         /// </summary>
-        public string TypeName { get; set; }
+        public string TypeName { get; set; } = null!;
 
         /// <summary>
         /// Gets or sets the custom name for the index.
         /// If not specified, the type name will be used.
         /// </summary>
-        public string Name { get; set; }
+        public string Name { get; set; } = null!;
 
         /// <summary>
         /// Gets or sets the maximum result window for the index.

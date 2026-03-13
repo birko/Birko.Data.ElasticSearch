@@ -67,9 +67,9 @@ namespace Birko.Data.ElasticSearch.Stores
         public void Init(Func<CreateIndexDescriptor, ICreateIndexRequest> indexDescriptor)
         {
             var indexName = GetIndexName();
-            if (!Connector.Indices.Exists(indexName).Exists)
+            if (!Connector!.Indices.Exists(indexName).Exists)
             {
-                var response = Connector.Indices.Create(indexName, indexDescriptor);
+                var response = Connector!.Indices.Create(indexName, indexDescriptor);
 
                 if (!response.IsValid || response.OriginalException != null)
                 {
@@ -95,10 +95,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override Guid Create(T data, StoreDataDelegate<T>? storeDelegate = null)
         {
-            if (data == null)
-            {
-                return Guid.Empty;
-            }
+            if (data == null) return Guid.Empty;
 
             data.Guid ??= Guid.NewGuid();
             storeDelegate?.Invoke(data);
@@ -106,7 +103,7 @@ namespace Birko.Data.ElasticSearch.Stores
             try
             {
                 var indexName = GetIndexName();
-                var response = Connector.Create(data, i => i.Id(data.Guid).Index(indexName));
+                var response = Connector!.Create(data, i => i.Id(data.Guid).Index(indexName));
 
                 if (!response.IsValid || response.OriginalException != null)
                 {
@@ -140,7 +137,7 @@ namespace Birko.Data.ElasticSearch.Stores
                     From = 0,
                     Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
                 };
-                var searchResponse = Connector.Search<T>(query);
+                var searchResponse = Connector!.Search<T>(query);
 
                 if (!searchResponse.IsValid || searchResponse.OriginalException != null)
                 {
@@ -164,60 +161,58 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override void Update(T data, StoreDataDelegate<T>? storeDelegate = null)
         {
-            if (data != null && data.Guid != null && data.Guid != Guid.Empty)
+            if (data == null || data.Guid == null || data.Guid == Guid.Empty) return;
+
+            storeDelegate?.Invoke(data);
+
+            try
             {
-                storeDelegate?.Invoke(data);
+                var indexName = GetIndexName();
+                var response = Connector!.Update<T, T>(data.Guid, (i) => i.Index(indexName).Doc(data));
 
-                try
+                if (!response.IsValid || response.OriginalException != null)
                 {
-                    var indexName = GetIndexName();
-                    var response = Connector.Update<T, T>(data.Guid, (i) => i.Index(indexName).Doc(data));
-
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"ElasticSearch update failed. Index: {indexName}, Guid: {data.Guid}. " +
-                            $"DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
+                    throw new InvalidOperationException(
+                        $"ElasticSearch update failed. Index: {indexName}, Guid: {data.Guid}. " +
+                        $"DebugInfo: {response.DebugInformation}",
+                        response.OriginalException);
                 }
-                catch (Exception ex) when (ex is InvalidOperationException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to update document in ElasticSearch", ex);
-                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to update document in ElasticSearch", ex);
             }
         }
 
         /// <inheritdoc />
         public override void Delete(T data)
         {
-            if (data != null && data.Guid != null && data.Guid != Guid.Empty)
-            {
-                try
-                {
-                    var indexName = GetIndexName();
-                    var response = Connector.Delete<T>(data.Guid, (i) => i.Index(indexName));
+            if (data == null || data.Guid == null || data.Guid == Guid.Empty) return;
 
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"ElasticSearch delete failed. Index: {indexName}, Guid: {data.Guid}. " +
-                            $"DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException)
+            try
+            {
+                var indexName = GetIndexName();
+                var response = Connector!.Delete<T>(data.Guid, (i) => i.Index(indexName));
+
+                if (!response.IsValid || response.OriginalException != null)
                 {
-                    throw;
+                    throw new InvalidOperationException(
+                        $"ElasticSearch delete failed. Index: {indexName}, Guid: {data.Guid}. " +
+                        $"DebugInfo: {response.DebugInformation}",
+                        response.OriginalException);
                 }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to delete document from ElasticSearch", ex);
-                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to delete document from ElasticSearch", ex);
             }
         }
 
@@ -369,7 +364,7 @@ namespace Birko.Data.ElasticSearch.Stores
 
             try
             {
-                var response = Connector.Count(request);
+                var response = Connector!.Count(request);
                 if (!response.IsValid || response.OriginalException != null)
                 {
                     throw new InvalidOperationException(
@@ -419,10 +414,7 @@ namespace Birko.Data.ElasticSearch.Stores
             int? limit = null,
             int? offset = null)
         {
-            if (Connector == null)
-            {
-                yield break;
-            }
+            if (Connector == null) yield break;
 
             var indexName = GetIndexName();
             SearchRequest request = new SearchRequest(indexName)
@@ -462,10 +454,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <returns>An async stream of documents matching the query.</returns>
         public IEnumerable<T> ReadStream(SearchRequest request)
         {
-            if (request == null || Connector == null)
-            {
-                yield break;
-            }
+            if (request == null || Connector == null) yield break;
 
             string? scrollId = null;
             Time? scrollTime = null;
@@ -493,7 +482,7 @@ namespace Birko.Data.ElasticSearch.Stores
                     }
                 }
 
-                var searchResponse = Connector.Search<T>(request);
+                var searchResponse = Connector!.Search<T>(request);
 
                 if (!searchResponse.IsValid || searchResponse.OriginalException != null)
                 {
@@ -541,7 +530,7 @@ namespace Birko.Data.ElasticSearch.Stores
                     // Fetch next page
                     if (!string.IsNullOrEmpty(scrollId) && scrollTime != null)
                     {
-                        searchResponse = Connector.Scroll<T>(new Nest.ScrollRequest(scrollId, scrollTime));
+                        searchResponse = Connector!.Scroll<T>(new Nest.ScrollRequest(scrollId, scrollTime));
 
                         if (!searchResponse.IsValid || searchResponse.OriginalException != null)
                         {
@@ -555,7 +544,7 @@ namespace Birko.Data.ElasticSearch.Stores
                     else
                     {
                         request.From = count;
-                        searchResponse = Connector.Search<T>(request);
+                        searchResponse = Connector!.Search<T>(request);
 
                         if (!searchResponse.IsValid || searchResponse.OriginalException != null)
                         {
@@ -578,7 +567,7 @@ namespace Birko.Data.ElasticSearch.Stores
                 {
                     try
                     {
-                        Connector.ClearScroll(new Nest.ClearScrollRequest(scrollId));
+                        Connector!.ClearScroll(new Nest.ClearScrollRequest(scrollId));
                     }
                     catch
                     {
@@ -664,27 +653,26 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <param name="indexName">The name of the index to delete.</param>
         public void DeleteIndex(string indexName)
         {
-            if (!string.IsNullOrEmpty(indexName))
-            {
-                try
-                {
-                    var response = Connector.Indices.Delete(indexName);
+            if (string.IsNullOrEmpty(indexName)) return;
 
-                    if (!response.IsValid || response.OriginalException != null)
-                    {
-                        throw new InvalidOperationException(
-                            $"Failed to delete index {indexName}. DebugInfo: {response.DebugInformation}",
-                            response.OriginalException);
-                    }
-                }
-                catch (Exception ex) when (ex is InvalidOperationException)
+            try
+            {
+                var response = Connector!.Indices.Delete(indexName);
+
+                if (!response.IsValid || response.OriginalException != null)
                 {
-                    throw;
+                    throw new InvalidOperationException(
+                        $"Failed to delete index {indexName}. DebugInfo: {response.DebugInformation}",
+                        response.OriginalException);
                 }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"Failed to delete index {indexName}", ex);
-                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to delete index {indexName}", ex);
             }
         }
 
@@ -696,7 +684,7 @@ namespace Birko.Data.ElasticSearch.Stores
             var indexName = GetIndexName();
             try
             {
-                var response = Connector.Indices.ClearCache(indexName);
+                var response = Connector!.Indices.ClearCache(indexName);
 
                 if (!response.IsValid && response.OriginalException != null)
                 {
@@ -733,7 +721,7 @@ namespace Birko.Data.ElasticSearch.Stores
         {
             try
             {
-                var healthResponse = Connector.Cluster.Health();
+                var healthResponse = Connector!.Cluster.Health();
                 return healthResponse.IsValid;
             }
             catch

@@ -126,7 +126,7 @@ public sealed class ElasticSearchUnitOfWork : IUnitOfWork<BulkOperationContext>
             {
                 throw new UnitOfWorkException(
                     $"Elasticsearch bulk operation failed: {response.ServerError?.Error?.Reason ?? response.OriginalException?.Message ?? "Unknown error"}",
-                    response.OriginalException);
+                    response.OriginalException!);
             }
 
             if (response.Errors)
