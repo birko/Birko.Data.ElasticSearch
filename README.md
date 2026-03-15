@@ -18,7 +18,8 @@ dotnet add package Birko.Data.ElasticSearch
 
 ## Dependencies
 
-- Birko.Data
+- Birko.Data.Core (AbstractModel)
+- Birko.Data.Stores (store interfaces, Settings)
 - NEST (Elasticsearch .NET client)
 
 ## Usage
@@ -68,7 +69,8 @@ var response = Client.Search<Product>(s => s
 
 ## Related Projects
 
-- [Birko.Data](../Birko.Data/) - Core interfaces
+- [Birko.Data.Core](../Birko.Data.Core/) - Models and core types
+- [Birko.Data.Stores](../Birko.Data.Stores/) - Store interfaces
 - [Birko.Data.ElasticSearch.ViewModel](../Birko.Data.ElasticSearch.ViewModel/) - ViewModel repositories
 
 ## License

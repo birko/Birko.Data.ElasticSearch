@@ -1,7 +1,7 @@
 # Birko.Data.ElasticSearch
 
 ## Overview
-Elasticsearch implementation for Birko.Data providing full-text search and document storage.
+Elasticsearch implementation for the Birko data layer providing full-text search and document storage.
 
 ## Project Location
 `C:\Source\Birko.Data.ElasticSearch\`
@@ -142,7 +142,8 @@ Client.Indices.Create(Settings.IndexName, c => c
 ```
 
 ## Dependencies
-- Birko.Data
+- Birko.Data.Core
+- Birko.Data.Stores
 - Nest (Elasticsearch .NET client)
 - Elasticsearch (7.x or 8.x)
 
