@@ -445,7 +445,7 @@ namespace Birko.Data.ElasticSearch.Stores
             if (request == null || Connector == null) yield break;
 
             string? scrollId = null;
-            Time? scrollTime = null;
+            Nest.Time? scrollTime = null;
             int count = request.From ?? 0;
             int? size = request.Size;
             int skip = 0;
@@ -460,7 +460,7 @@ namespace Birko.Data.ElasticSearch.Stores
                 if ((request.From == null && request.Size == null)
                    || ((request.Size ?? 0) + count) >= maxResultWindow)
                 {
-                    scrollTime = new Time(Data.ElasticSearch.ElasticSearch.DefaultScrollTime);
+                    scrollTime = new Nest.Time(Data.ElasticSearch.ElasticSearch.DefaultScrollTime);
                     request.Scroll = scrollTime;
                     request.Size = Math.Min(request.Size ?? 1000, 1000);
                     request.From = null;
