@@ -26,6 +26,12 @@ Elasticsearch implementation for the Birko data layer providing full-text search
 - `AsyncElasticSearchRepository<T>` - Async repository
 - `AsyncElasticSearchBulkRepository<T>` - Async bulk repository
 
+### Index Management
+- `IndexInfo` - DTO containing index name, health, status, document count, size, alias list
+- `ReindexResult` - DTO containing success flag, documents indexed, duration, failures list
+- `IndexManager` - Index CRUD operations, settings updates, mappings, alias management, index templates, cache/refresh/flush operations
+- `ReindexHelper` - Basic reindex between indices, reindex with Painless script transformation, zero-downtime reindex via alias swap
+
 ## Connection
 
 Connection settings:

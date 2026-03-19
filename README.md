@@ -67,6 +67,57 @@ var response = Client.Search<Product>(s => s
 - **ElasticSearchRepository\<T\>** / **ElasticSearchBulkRepository\<T\>**
 - **AsyncElasticSearchRepository\<T\>** / **AsyncElasticSearchBulkRepository\<T\>**
 
+### Index Management
+
+```csharp
+using Birko.Data.ElasticSearch.IndexManagement;
+
+var manager = new IndexManager(client);
+
+// Create an index with settings and mappings
+await manager.CreateIndexAsync("products-v2", new
+{
+    settings = new { number_of_shards = 2, number_of_replicas = 1 },
+    mappings = new { properties = new { Name = new { type = "text" } } }
+});
+
+// Get index information
+IndexInfo info = await manager.GetIndexInfoAsync("products-v2");
+Console.WriteLine($"Docs: {info.DocumentCount}, Size: {info.Size}");
+
+// Manage aliases
+await manager.AddAliasAsync("products-v2", "products");
+await manager.RemoveAliasAsync("products-v1", "products");
+
+// Refresh, flush, clear cache
+await manager.RefreshIndexAsync("products-v2");
+await manager.FlushIndexAsync("products-v2");
+await manager.ClearCacheAsync("products-v2");
+```
+
+### Reindexing
+
+```csharp
+using Birko.Data.ElasticSearch.IndexManagement;
+
+var reindexHelper = new ReindexHelper(client);
+
+// Basic reindex
+ReindexResult result = await reindexHelper.ReindexAsync("products-v1", "products-v2");
+Console.WriteLine($"Indexed {result.DocumentsIndexed} docs in {result.Duration}");
+
+// Reindex with a Painless script transformation
+ReindexResult scriptResult = await reindexHelper.ReindexWithScriptAsync(
+    "products-v1", "products-v2",
+    "ctx._source.price = ctx._source.price * 1.1"
+);
+
+// Zero-downtime reindex via alias swap
+ReindexResult swapResult = await reindexHelper.ZeroDowntimeReindexAsync(
+    "products-v1", "products-v2", "products"
+);
+```
+
 ## Related Projects
 
 - [Birko.Data.Core](../Birko.Data.Core/) - Models and core types
