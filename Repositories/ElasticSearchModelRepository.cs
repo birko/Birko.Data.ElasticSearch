@@ -1,6 +1,7 @@
 using Birko.Data.ElasticSearch.Stores;
 using Birko.Data.Repositories;
 using Birko.Data.Stores;
+using Birko.Configuration;
 using System;
 using System.Collections.Generic;
 

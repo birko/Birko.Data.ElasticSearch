@@ -5,10 +5,10 @@ namespace Birko.Data.ElasticSearch.Stores
 {
     /// <summary>
     /// ElasticSearch-specific settings for store configuration.
-    /// Extends the base <see cref="Data.Stores.Settings"/> with index configuration.
+    /// Extends the base <see cref="Birko.Configuration.Settings"/> with index configuration.
     /// </summary>
     public class Settings
-        : Data.Stores.Settings
+        : Birko.Configuration.Settings
     {
         #region Properties
 

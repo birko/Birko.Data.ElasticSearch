@@ -1,4 +1,5 @@
 using Birko.Data.Stores;
+using Birko.Configuration;
 using Nest;
 using System;
 using System.Collections.Generic;
