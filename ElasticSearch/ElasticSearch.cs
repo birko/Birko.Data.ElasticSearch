@@ -28,6 +28,16 @@ namespace Birko.Data.ElasticSearch
         private static readonly ConcurrentDictionary<string, ElasticClient> _clients = new();
         private static readonly ConcurrentDictionary<string, Func<object>> _expressionCache = new();
 
+        /// <summary>
+        /// Maximum number of retries for transient failures. Default is 3.
+        /// </summary>
+        public static int MaxRetries { get; set; } = 3;
+
+        /// <summary>
+        /// Request timeout for Elasticsearch operations. Default is 60 seconds.
+        /// </summary>
+        public static TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(60);
+
         public static ElasticClient GetClient(Stores.Settings settings)
         {
             var settingsId = settings.GetId();
@@ -35,7 +45,9 @@ namespace Birko.Data.ElasticSearch
             {
                 var local = new Uri(settings.Location);
                 var clientSettings = new ConnectionSettings(local)
-                    .DisableDirectStreaming();
+                    .DisableDirectStreaming()
+                    .MaximumRetries(MaxRetries)
+                    .RequestTimeout(RequestTimeout);
                 return new ElasticClient(clientSettings);
             });
         }
