@@ -1,3 +1,4 @@
+using Birko.Data.ElasticSearch.Highlighting;
 using Birko.Data.Stores;
 using Birko.Configuration;
 using Nest;
@@ -566,6 +567,127 @@ namespace Birko.Data.ElasticSearch.Stores
                     }
                 }
             }
+        }
+
+        #endregion
+
+        #region Highlighted Search
+
+        /// <summary>
+        /// Searches documents with highlight support, returning matched fragments for specified fields.
+        /// </summary>
+        /// <param name="filter">Optional filter expression.</param>
+        /// <param name="highlightOptions">Options controlling which fields to highlight and how.</param>
+        /// <param name="orderBy">Optional ordering.</param>
+        /// <param name="limit">Maximum number of results.</param>
+        /// <param name="offset">Number of results to skip.</param>
+        /// <param name="ct">Cancellation token.</param>
+        /// <returns>Search results with highlighting information.</returns>
+        public async Task<HighlightedSearchResults<T>> SearchWithHighlightsAsync(
+            Expression<Func<T, bool>>? filter,
+            HighlightOptions highlightOptions,
+            OrderBy<T>? orderBy = null,
+            int? limit = null,
+            int? offset = null,
+            CancellationToken ct = default)
+        {
+            if (highlightOptions == null) throw new ArgumentNullException(nameof(highlightOptions));
+            if (Connector == null) return new HighlightedSearchResults<T>(Array.Empty<SearchResult<T>>(), 0);
+
+            var query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter);
+            return await SearchWithHighlightsAsync(query, highlightOptions, orderBy, limit, offset, ct);
+        }
+
+        /// <summary>
+        /// Searches documents with highlight support using a query container.
+        /// </summary>
+        /// <param name="query">The query container.</param>
+        /// <param name="highlightOptions">Options controlling which fields to highlight and how.</param>
+        /// <param name="orderBy">Optional ordering.</param>
+        /// <param name="limit">Maximum number of results.</param>
+        /// <param name="offset">Number of results to skip.</param>
+        /// <param name="ct">Cancellation token.</param>
+        /// <returns>Search results with highlighting information.</returns>
+        public async Task<HighlightedSearchResults<T>> SearchWithHighlightsAsync(
+            QueryContainer? query,
+            HighlightOptions highlightOptions,
+            OrderBy<T>? orderBy = null,
+            int? limit = null,
+            int? offset = null,
+            CancellationToken ct = default)
+        {
+            if (highlightOptions == null) throw new ArgumentNullException(nameof(highlightOptions));
+            if (Connector == null) return new HighlightedSearchResults<T>(Array.Empty<SearchResult<T>>(), 0);
+
+            var indexName = GetIndexName();
+            var request = new SearchRequest(indexName)
+            {
+                Size = limit,
+                From = offset
+            };
+
+            if (query != null)
+            {
+                request.Query = query;
+            }
+
+            if (orderBy != null && orderBy.Fields.Count > 0)
+            {
+                var sorts = new List<ISort>();
+                foreach (var field in orderBy.Fields)
+                {
+                    sorts.Add(new FieldSort
+                    {
+                        Field = field.PropertyName,
+                        Order = field.Descending ? SortOrder.Descending : SortOrder.Ascending
+                    });
+                }
+                request.Sort = sorts;
+            }
+
+            // Build highlight configuration
+            var highlightFields = new Dictionary<Field, IHighlightField>();
+            foreach (var fieldName in highlightOptions.Fields)
+            {
+                highlightFields[fieldName] = new HighlightField
+                {
+                    FragmentSize = highlightOptions.FragmentSize,
+                    NumberOfFragments = highlightOptions.NumberOfFragments
+                };
+            }
+
+            request.Highlight = new Highlight
+            {
+                PreTags = new[] { highlightOptions.PreTag },
+                PostTags = new[] { highlightOptions.PostTag },
+                Fields = highlightFields
+            };
+
+            var searchResponse = await Connector.SearchAsync<T>(request, ct);
+
+            if (!searchResponse.IsValid || searchResponse.OriginalException != null)
+            {
+                throw new InvalidOperationException(
+                    $"ElasticSearch highlighted search failed. Index: {indexName}. DebugInfo: {searchResponse.DebugInformation}",
+                    searchResponse.OriginalException);
+            }
+
+            var hits = new List<SearchResult<T>>();
+            foreach (var hit in searchResponse.Hits)
+            {
+                var highlights = new Dictionary<string, IReadOnlyList<string>>();
+                if (hit.Highlight != null)
+                {
+                    foreach (var kvp in hit.Highlight)
+                    {
+                        highlights[kvp.Key] = kvp.Value.ToList().AsReadOnly();
+                    }
+                }
+
+                hits.Add(new SearchResult<T>(hit.Source, highlights, hit.Score));
+            }
+
+            return new HighlightedSearchResults<T>(hits.AsReadOnly(), searchResponse.Total);
         }
 
         #endregion

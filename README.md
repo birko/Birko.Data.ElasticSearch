@@ -8,6 +8,7 @@ Elasticsearch implementation for the Birko Framework providing full-text search 
 - Document-based CRUD operations (sync/async)
 - Bulk operations optimized for Elasticsearch
 - Aggregations and pagination
+- Search result highlighting
 - Index mapping and management
 
 ## Installation

@@ -21,5 +21,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)IndexManagement\IndexManager.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)IndexManagement\ReindexHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)IndexManagement\ElasticSearchIndexManagerAdapter.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Highlighting\HighlightOptions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Highlighting\SearchResult.cs" />
   </ItemGroup>
 </Project>
