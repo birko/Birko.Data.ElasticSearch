@@ -95,6 +95,34 @@ await manager.FlushIndexAsync("products-v2");
 await manager.ClearCacheAsync("products-v2");
 ```
 
+### Uniform IIndexManager Interface
+
+```csharp
+using Birko.Data.ElasticSearch.IndexManagement;
+using Birko.Data.Patterns.IndexManagement;
+
+// Adapter wraps existing IndexManager with IIndexManager interface
+var adapter = new ElasticSearchIndexManagerAdapter(client);
+
+// Same API as MongoDB, RavenDB, SQL providers
+await adapter.CreateAsync(new IndexDefinition
+{
+    Name = "products-v2",
+    Properties = new Dictionary<string, object>
+    {
+        ["NumberOfShards"] = 2,
+        ["NumberOfReplicas"] = 1
+    }
+});
+var indexes = await adapter.ListAsync();
+var info = await adapter.GetInfoAsync("products-v2");
+
+// Access full ES-specific capabilities via .Native
+var native = adapter.Native;
+await native.CreateAliasAsync("products-v2", "products");
+await native.SwapAliasAsync("products", "products-v1", "products-v2");
+```
+
 ### Reindexing
 
 ```csharp
