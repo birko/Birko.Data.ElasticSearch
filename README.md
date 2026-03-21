@@ -147,6 +147,39 @@ ReindexResult swapResult = await reindexHelper.ZeroDowntimeReindexAsync(
 );
 ```
 
+### Search Result Highlighting
+
+Highlight matching terms in search results:
+
+```csharp
+using Birko.Data.ElasticSearch.Stores;
+
+var response = Client.Search<Product>(s => s
+    .Index(Settings.IndexName)
+    .Query(q => q.MultiMatch(m => m
+        .Query("search term")
+        .Fields(f => f.Field(p => p.Name).Field(p => p.Description))
+    ))
+    .Highlight(h => h
+        .PreTags("<em>")
+        .PostTags("</em>")
+        .Fields(
+            f => f.Field(p => p.Name),
+            f => f.Field(p => p.Description)
+        )
+    )
+);
+
+foreach (var hit in response.Hits)
+{
+    var highlights = hit.Highlight;
+    if (highlights.ContainsKey("name"))
+    {
+        Console.WriteLine($"Name: {string.Join("...", highlights["name"])}");
+    }
+}
+```
+
 ## Related Projects
 
 - [Birko.Data.Core](../Birko.Data.Core/) - Models and core types

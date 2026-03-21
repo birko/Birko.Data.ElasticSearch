@@ -26,6 +26,12 @@ Elasticsearch implementation for the Birko data layer providing full-text search
 - `AsyncElasticSearchRepository<T>` - Async repository
 - `AsyncElasticSearchBulkRepository<T>` - Async bulk repository
 
+### Search Result Highlighting
+- `HighlightOptions` - Configuration for search result highlighting (pre/post tags, fragment size)
+- `SearchResult<T>` - Wrapper for search results including highlight data
+- `HighlightedSearchResults<T>` - Collection of search results with per-field highlight fragments
+- Supports customizable pre/post tags, field-specific highlighting, and fragment count
+
 ### Index Management
 - `IndexInfo` - DTO containing index name, health, status, document count, size, alias list
 - `ReindexResult` - DTO containing success flag, documents indexed, duration, failures list
