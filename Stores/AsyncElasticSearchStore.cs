@@ -259,6 +259,49 @@ namespace Birko.Data.ElasticSearch.Stores
             await BulkAsync(null, null, itemsToDelete, ct);
         }
 
+        /// <inheritdoc />
+        public override async Task DeleteAsync(Expression<Func<T, bool>> filter, CancellationToken ct = default)
+        {
+            if (Connector == null) return;
+
+            var indexName = GetIndexName();
+            await Connector.DeleteByQueryAsync(new Nest.DeleteByQueryRequest(indexName)
+            {
+                Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
+            }, ct);
+        }
+
+        /// <inheritdoc />
+        public override async Task UpdateAsync(Expression<Func<T, bool>> filter, Data.Stores.PropertyUpdate<T> updates, CancellationToken ct = default)
+        {
+            if (Connector == null || updates.Assignments.Count == 0) return;
+
+            var indexName = GetIndexName();
+            var scriptParts = new List<string>();
+            var scriptParams = new Dictionary<string, object>();
+
+            foreach (var (property, value) in updates.Assignments)
+            {
+                var memberExpr = property.Body is UnaryExpression unary
+                    ? (MemberExpression)unary.Operand
+                    : (MemberExpression)property.Body;
+
+                var fieldName = char.ToLowerInvariant(memberExpr.Member.Name[0]) + memberExpr.Member.Name.Substring(1);
+                var paramName = "p_" + memberExpr.Member.Name;
+                scriptParts.Add($"ctx._source.{fieldName} = params.{paramName}");
+                scriptParams[paramName] = value ?? string.Empty;
+            }
+
+            await Connector.UpdateByQueryAsync(new Nest.UpdateByQueryRequest(indexName)
+            {
+                Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter),
+                Script = new Nest.InlineScript(string.Join("; ", scriptParts))
+                {
+                    Params = scriptParams
+                }
+            }, ct);
+        }
+
         /// <summary>
         /// Performs async bulk operations on ElasticSearch.
         /// </summary>

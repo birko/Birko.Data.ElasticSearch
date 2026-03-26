@@ -186,6 +186,14 @@ foreach (var hit in response.Hits)
 - [Birko.Data.Stores](../Birko.Data.Stores/) - Store interfaces
 - [Birko.Data.ElasticSearch.ViewModel](../Birko.Data.ElasticSearch.ViewModel/) - ViewModel repositories
 
+## Filter-Based Bulk Operations
+
+ElasticSearch stores support native filter-based update and delete:
+
+- `Update(filter, PropertyUpdate<T>)` — Uses `UpdateByQuery` with Painless scripts generated from property assignments
+- `Delete(filter)` — Uses `DeleteByQuery` with filter converted via `ParseExpression()`
+- `Update(filter, Action<T>)` — Read-modify-save fallback for complex mutations
+
 ## License
 
 Part of the Birko Framework.

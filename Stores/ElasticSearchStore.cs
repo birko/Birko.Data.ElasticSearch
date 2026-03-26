@@ -268,6 +268,49 @@ namespace Birko.Data.ElasticSearch.Stores
             Bulk(null, null, itemsToDelete);
         }
 
+        /// <inheritdoc />
+        public override void Delete(Expression<Func<T, bool>> filter)
+        {
+            if (Connector == null) return;
+
+            var indexName = GetIndexName();
+            Connector.DeleteByQuery(new Nest.DeleteByQueryRequest(indexName)
+            {
+                Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
+            });
+        }
+
+        /// <inheritdoc />
+        public override void Update(Expression<Func<T, bool>> filter, Data.Stores.PropertyUpdate<T> updates)
+        {
+            if (Connector == null || updates.Assignments.Count == 0) return;
+
+            var indexName = GetIndexName();
+            var scriptParts = new List<string>();
+            var scriptParams = new Dictionary<string, object>();
+
+            foreach (var (property, value) in updates.Assignments)
+            {
+                var memberExpr = property.Body is UnaryExpression unary
+                    ? (MemberExpression)unary.Operand
+                    : (MemberExpression)property.Body;
+
+                var fieldName = char.ToLowerInvariant(memberExpr.Member.Name[0]) + memberExpr.Member.Name.Substring(1);
+                var paramName = "p_" + memberExpr.Member.Name;
+                scriptParts.Add($"ctx._source.{fieldName} = params.{paramName}");
+                scriptParams[paramName] = value ?? string.Empty;
+            }
+
+            Connector.UpdateByQuery(new Nest.UpdateByQueryRequest(indexName)
+            {
+                Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter),
+                Script = new Nest.InlineScript(string.Join("; ", scriptParts))
+                {
+                    Params = scriptParams
+                }
+            });
+        }
+
         /// <summary>
         /// Performs async bulk operations on ElasticSearch.
         /// </summary>
