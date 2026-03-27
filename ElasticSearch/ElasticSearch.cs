@@ -108,6 +108,20 @@ namespace Birko.Data.ElasticSearch
             var field = left?.Field ?? right?.Field;
             var value = right?.Value ?? left?.Value;
 
+            // Handle null comparisons: Equal(member, null) → must_not exists, NotEqual(member, null) → exists
+            if (field != null && value == null)
+            {
+                return binary.NodeType switch
+                {
+                    ExpressionType.Equal => new BoolQuery
+                    {
+                        MustNot = new QueryContainer[] { new ExistsQuery { Field = field } }
+                    },
+                    ExpressionType.NotEqual => new ExistsQuery { Field = field },
+                    _ => null
+                };
+            }
+
             if (field == null || value == null)
                 return null;
 
@@ -247,6 +261,17 @@ namespace Birko.Data.ElasticSearch
 
         private static QueryBase? ParseMember(MemberExpression member, Type? exprType, string? fieldPrefix)
         {
+            // Nullable HasValue access: x.NullableProp.HasValue → exists query (IS NOT NULL)
+            if (member.Member.Name == "HasValue"
+                && member.Expression is MemberExpression hasValueInner
+                && member.Member.ReflectedType != null
+                && Nullable.GetUnderlyingType(member.Member.ReflectedType) != null
+                && exprType != null && IsDirectMemberOfParameter(hasValueInner, exprType))
+            {
+                var name = FormatFieldName(hasValueInner.Member.Name, fieldPrefix);
+                return name != null ? new ExistsQuery { Field = name } : null;
+            }
+
             // Direct member access (e.g., x => x.Name)
             if (exprType != null && IsDirectMemberOfParameter(member, exprType))
             {
