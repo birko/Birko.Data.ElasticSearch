@@ -287,23 +287,18 @@ namespace Birko.Data.ElasticSearch
                 return new TermQuery { Field = name };
             }
 
-            // Constant or closure member access (e.g., x => x.Name == localVariable)
-            if (member.Expression is ConstantExpression || member.Expression == null)
+            // Constant, closure, or non-parameter member access — evaluate as value
+            if (!ContainsParameter(member))
             {
                 var value = EvaluateExpression(member);
                 return value != null ? new TermQuery { Value = value } : null;
             }
 
-            // Try to evaluate, otherwise recurse
-            try
-            {
-                var value = EvaluateExpression(member);
-                return value != null ? new TermQuery { Value = value } : null;
-            }
-            catch
-            {
-                return ParseExpression(member.Expression, null, fieldPrefix);
-            }
+            // Parameter-bound sub-expression — recurse
+            if (member.Expression != null)
+                return ParseExpression(member.Expression, exprType, fieldPrefix);
+
+            return null;
         }
 
         private static QueryBase? ParseUnary(UnaryExpression unary, Type? exprType, string? fieldPrefix)
@@ -340,7 +335,10 @@ namespace Birko.Data.ElasticSearch
                    member.Member.ReflectedType.IsAssignableFrom(type) &&
                    member.Expression != null &&
                    (member.Expression.NodeType == ExpressionType.Parameter ||
-                    member.Expression.NodeType == ExpressionType.TypeAs);
+                    member.Expression.NodeType == ExpressionType.TypeAs ||
+                    (member.Expression is UnaryExpression conv
+                        && conv.NodeType == ExpressionType.Convert
+                        && conv.Operand.NodeType == ExpressionType.Parameter));
         }
 
         private static string? FormatFieldName(string? name, string? prefix)
@@ -361,28 +359,75 @@ namespace Birko.Data.ElasticSearch
             return string.IsNullOrEmpty(prefix) ? camel : $"{prefix}.{camel}";
         }
 
+        private static bool ContainsParameter(Expression expr)
+        {
+            if (expr is ParameterExpression)
+                return true;
+            if (expr is LambdaExpression lambda)
+                return lambda.Parameters.Count > 0;
+            if (expr is MemberExpression me)
+                return me.Expression != null && ContainsParameter(me.Expression);
+            if (expr is MethodCallExpression mc)
+            {
+                if (mc.Object != null && ContainsParameter(mc.Object))
+                    return true;
+                return mc.Arguments.Any(ContainsParameter);
+            }
+            if (expr is UnaryExpression ue)
+                return ContainsParameter(ue.Operand);
+            if (expr is BinaryExpression be)
+                return ContainsParameter(be.Left) || ContainsParameter(be.Right);
+            return false;
+        }
+
         private static object? EvaluateExpression(Expression expr)
         {
             if (expr is ConstantExpression c)
                 return c.Value;
 
-            if (expr is MemberExpression m && m.Expression is ConstantExpression mc)
+            if (expr is MemberExpression m)
             {
-                if (m.Member is FieldInfo fi)
-                    return fi.GetValue(mc.Value);
-                if (m.Member is PropertyInfo pi)
-                    return pi.GetValue(mc.Value);
+                object? container = null;
+                if (m.Expression != null)
+                    container = EvaluateExpression(m.Expression);
+
+                try
+                {
+                    if (m.Member is FieldInfo fi)
+                        return fi.GetValue(container);
+                    if (m.Member is PropertyInfo pi)
+                        return pi.GetValue(container);
+                }
+                catch (TargetException)
+                {
+                    // Non-static member on null container — fall through to lambda compilation
+                }
             }
 
-            // Use expression string as cache key (Expression doesn't implement GetHashCode/Equals)
+            if (expr is UnaryExpression ue && ue.NodeType == ExpressionType.Convert)
+                return EvaluateExpression(ue.Operand);
+
+            if (expr is MethodCallExpression mce)
+            {
+                object? instance = mce.Object != null ? EvaluateExpression(mce.Object) : null;
+                var args = new object?[mce.Arguments.Count];
+                for (int i = 0; i < mce.Arguments.Count; i++)
+                    args[i] = EvaluateExpression(mce.Arguments[i]);
+                return mce.Method.Invoke(instance, args);
+            }
+
+            // Fallback: compile as parameterless lambda with cache
             var cacheKey = expr.ToString();
             var func = _expressionCache.GetOrAdd(cacheKey, _ =>
             {
-                var lambda = Expression.Lambda(expr);
-                return (Func<object>)lambda.Compile();
+                // Box value types so the delegate is always Func<object>
+                var body = expr.Type.IsValueType
+                    ? Expression.Convert(expr, typeof(object))
+                    : expr;
+                return Expression.Lambda<Func<object>>(body).Compile();
             });
 
-            return func.DynamicInvoke();
+            return func();
         }
     }
 }
