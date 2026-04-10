@@ -83,7 +83,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override void Init()
+        protected override void InitCore()
         {
             Init(cid =>
                 cid.Map<T>(m => m.AutoMap())
@@ -95,7 +95,7 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Core CRUD Operations - Single Item
 
         /// <inheritdoc />
-        public override Guid Create(T data, StoreDataDelegate<T>? storeDelegate = null)
+        protected override Guid CreateCore(T data, StoreDataDelegate<T>? storeDelegate = null)
         {
             if (data == null) return Guid.Empty;
 
@@ -128,7 +128,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override T? Read(Expression<Func<T, bool>>? filter = null)
+        protected override T? ReadCore(Expression<Func<T, bool>>? filter = null)
         {
             try
             {
@@ -161,7 +161,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override void Update(T data, StoreDataDelegate<T>? storeDelegate = null)
+        protected override void UpdateCore(T data, StoreDataDelegate<T>? storeDelegate = null)
         {
             if (data == null || data.Guid == null || data.Guid == Guid.Empty) return;
 
@@ -191,7 +191,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override void Delete(T data)
+        protected override void DeleteCore(T data)
         {
             if (data == null || data.Guid == null || data.Guid == Guid.Empty) return;
 
@@ -222,7 +222,7 @@ namespace Birko.Data.ElasticSearch.Stores
 
         #region Core CRUD Operations - Bulk
 
-        public override void Create(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null)
+        protected override void CreateCore(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null)
         {
             if (data == null || Connector == null) return;
 
@@ -239,7 +239,7 @@ namespace Birko.Data.ElasticSearch.Stores
             Bulk(itemsToCreate, null, null);
         }
 
-        public override IEnumerable<T> Read(Expression<Func<T, bool>>? filter = null, OrderBy<T>? orderBy = null, int? limit = null, int? offset = null)
+        protected override IEnumerable<T> ReadCore(Expression<Func<T, bool>>? filter = null, OrderBy<T>? orderBy = null, int? limit = null, int? offset = null)
         {
             foreach (var item in ReadStream(filter, orderBy, limit, offset))
             {
@@ -247,7 +247,7 @@ namespace Birko.Data.ElasticSearch.Stores
             }
         }
 
-        public override void Update(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null)
+        protected override void UpdateCore(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null)
         {
             if (data == null || Connector == null) return;
 
@@ -260,7 +260,7 @@ namespace Birko.Data.ElasticSearch.Stores
             Bulk(null, itemsToUpdate, null);
         }
 
-        public override void Delete(IEnumerable<T> data)
+        protected override void DeleteCore(IEnumerable<T> data)
         {
             if (data == null || Connector == null) return;
 
@@ -388,7 +388,7 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Query and Count Operations
 
         /// <inheritdoc />
-        public override long Count(Expression<Func<T, bool>>? filter = null)
+        protected override long CountCore(Expression<Func<T, bool>>? filter = null)
         {
             return Count(filter != null ? Data.ElasticSearch.ElasticSearch.ParseExpression(filter) : null);
         }

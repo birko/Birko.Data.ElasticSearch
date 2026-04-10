@@ -88,7 +88,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override Task InitAsync(CancellationToken ct = default)
+        protected override Task InitCoreAsync(CancellationToken ct = default)
         {
             return InitAsync(cid => cid.Map<T>(m => m.AutoMap()), ct);
         }
@@ -98,7 +98,7 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Core CRUD Operations - Single Item
 
         /// <inheritdoc />
-        public override async Task<Guid> CreateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
+        protected override async Task<Guid> CreateCoreAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
             if (Connector == null || data == null) return Guid.Empty;
 
@@ -120,7 +120,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override async Task<T?> ReadAsync(Expression<Func<T, bool>>? filter = null, CancellationToken ct = default)
+        protected override async Task<T?> ReadCoreAsync(Expression<Func<T, bool>>? filter = null, CancellationToken ct = default)
         {
             if (Connector == null) return null;
 
@@ -145,7 +145,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override async Task UpdateAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
+        protected override async Task UpdateCoreAsync(T data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
             if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty) return;
 
@@ -164,7 +164,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override async Task DeleteAsync(T data, CancellationToken ct = default)
+        protected override async Task DeleteCoreAsync(T data, CancellationToken ct = default)
         {
             if (Connector == null || data == null || data.Guid == null || data.Guid == Guid.Empty) return;
 
@@ -208,7 +208,7 @@ namespace Birko.Data.ElasticSearch.Stores
             return await Task.FromResult(searchResponse.Documents);
         }
 
-        public override async Task<IEnumerable<T>> ReadAsync(Expression<Func<T, bool>>? filter = null, OrderBy<T>? orderBy = null, int? limit = null, int? offset = null, CancellationToken ct = default)
+        protected override async Task<IEnumerable<T>> ReadCoreAsync(Expression<Func<T, bool>>? filter = null, OrderBy<T>? orderBy = null, int? limit = null, int? offset = null, CancellationToken ct = default)
         {
             var results = new List<T>();
             await foreach (var item in ReadStreamAsync(filter, orderBy, limit, offset, ct))
@@ -219,7 +219,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override async Task CreateAsync(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
+        protected override async Task CreateCoreAsync(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
             if (data == null || Connector == null) return;
 
@@ -237,7 +237,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override async Task UpdateAsync(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
+        protected override async Task UpdateCoreAsync(IEnumerable<T> data, StoreDataDelegate<T>? storeDelegate = null, CancellationToken ct = default)
         {
             if (data == null || Connector == null) return;
 
@@ -251,7 +251,7 @@ namespace Birko.Data.ElasticSearch.Stores
         }
 
         /// <inheritdoc />
-        public override async Task DeleteAsync(IEnumerable<T> data, CancellationToken ct = default)
+        protected override async Task DeleteCoreAsync(IEnumerable<T> data, CancellationToken ct = default)
         {
             if (data == null || Connector == null) return;
 
@@ -380,7 +380,7 @@ namespace Birko.Data.ElasticSearch.Stores
         #region Query and Count Operations
 
         /// <inheritdoc />
-        public override async Task<long> CountAsync(Expression<Func<T, bool>>? filter = null, CancellationToken ct = default)
+        protected override async Task<long> CountCoreAsync(Expression<Func<T, bool>>? filter = null, CancellationToken ct = default)
         {
             return await CountAsync(filter != null ? Data.ElasticSearch.ElasticSearch.ParseExpression(filter) : null, ct);
         }
