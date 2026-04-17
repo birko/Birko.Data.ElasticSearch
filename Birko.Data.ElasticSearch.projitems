@@ -23,5 +23,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)IndexManagement\ElasticSearchIndexManagerAdapter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Highlighting\HighlightOptions.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Highlighting\SearchResult.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Aggregation\StoreAggregationHelper.cs" />
   </ItemGroup>
 </Project>

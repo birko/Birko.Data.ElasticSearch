@@ -1,3 +1,4 @@
+using Birko.Data.ElasticSearch.Aggregation;
 using Birko.Data.ElasticSearch.Highlighting;
 using Birko.Data.Stores;
 using Birko.Configuration;
@@ -18,6 +19,7 @@ namespace Birko.Data.ElasticSearch.Stores
     public class ElasticSearchStore<T>
         : AbstractBulkStore<T>
         , ISettingsStore<Settings>
+        , IAggregatableStore<T>
          where T : Models.AbstractModel
     {
         /// <summary>
@@ -901,6 +903,81 @@ namespace Birko.Data.ElasticSearch.Stores
             {
                 return false;
             }
+        }
+
+        #endregion
+
+        #region Aggregation
+
+        /// <summary>
+        /// Executes a synchronous aggregation query using native Elasticsearch aggregation API.
+        /// Uses Terms/Composite aggregation for GROUP BY and metric aggregations for Sum/Avg/Min/Max/Count.
+        /// </summary>
+        public IReadOnlyList<AggregateResult> Aggregate(AggregateQuery<T> query)
+        {
+            if (Connector == null) return Array.Empty<AggregateResult>();
+
+            var indexName = GetIndexName();
+
+            QueryContainer? filterQuery = null;
+            if (query.Filter != null)
+            {
+                filterQuery = Data.ElasticSearch.ElasticSearch.ParseExpression(query.Filter);
+            }
+
+            var metricAggregations = StoreAggregationHelper.BuildMetricAggregations(query.Aggregates);
+
+            AggregationDictionary topLevelAggregations;
+            bool hasGroupBy = query.GroupByFields.Count > 0;
+            bool hasTimeBucket = !string.IsNullOrEmpty(query.TimeBucketInterval) && !string.IsNullOrEmpty(query.TimeColumn);
+
+            if (hasTimeBucket)
+            {
+                var dateHistAgg = new DateHistogramAggregation("time_bucket")
+                {
+                    Field = query.TimeColumn,
+                    FixedInterval = StoreAggregationHelper.ParseToTime(query.TimeBucketInterval!),
+                    Aggregations = hasGroupBy
+                        ? new AggregationDictionary { { "group_by", StoreAggregationHelper.BuildGroupByAggregation(query, metricAggregations) } }
+                        : metricAggregations
+                };
+                topLevelAggregations = new AggregationDictionary
+                {
+                    { "time_bucket", new AggregationContainer { DateHistogram = dateHistAgg } }
+                };
+            }
+            else if (hasGroupBy)
+            {
+                topLevelAggregations = new AggregationDictionary
+                {
+                    { "group_by", StoreAggregationHelper.BuildGroupByAggregation(query, metricAggregations) }
+                };
+            }
+            else
+            {
+                topLevelAggregations = metricAggregations;
+            }
+
+            var searchRequest = new SearchRequest(indexName)
+            {
+                Size = 0,
+                Query = filterQuery,
+                Aggregations = topLevelAggregations
+            };
+
+            var response = Connector!.Search<T>(searchRequest);
+
+            if (!response.IsValid || response.OriginalException != null)
+            {
+                throw new InvalidOperationException(
+                    $"ElasticSearch aggregation query failed. Index: {indexName}. DebugInfo: {response.DebugInformation}",
+                    response.OriginalException);
+            }
+
+            var results = StoreAggregationHelper.ParseAggregateResponse(response, query, hasGroupBy, hasTimeBucket);
+            results = AggregateHelper.ApplyOrderingAndPaging(results, query.OrderBy, query.Offset, query.Limit);
+
+            return results.AsReadOnly();
         }
 
         #endregion
