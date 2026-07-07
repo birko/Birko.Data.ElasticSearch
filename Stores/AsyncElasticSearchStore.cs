@@ -186,29 +186,10 @@ namespace Birko.Data.ElasticSearch.Stores
 
         #region Core CRUD Operations - Bulk
 
-        /// <inheritdoc />
-        public override async Task<IEnumerable<T>> ReadAsync(CancellationToken ct = default)
-        {
-            if (Connector == null) return Enumerable.Empty<T>();
-
-            var indexName = GetIndexName();
-            var query = new SearchRequest(indexName)
-            {
-                Size = Math.Min(Data.ElasticSearch.ElasticSearch.MaxResultWindow, 1000),
-                From = 0
-            };
-
-            var searchResponse = await Connector.SearchAsync<T>(query, ct);
-
-            if (!searchResponse.IsValid || searchResponse.OriginalException != null)
-            {
-                throw new InvalidOperationException(
-                    $"ElasticSearch query failed. Index: {indexName}. DebugInfo: {searchResponse.DebugInformation}",
-                    searchResponse.OriginalException);
-            }
-
-            return await Task.FromResult(searchResponse.Documents);
-        }
+        // No ReadAsync(ct) override: the base forwards to ReadAsync(null, null, null, null, ct),
+        // which runs the lazy-init/cancellation gate and the scrolling ReadCoreAsync below. The old
+        // override skipped lazy-init and hard-capped the result at 1000 docs with no scrolling,
+        // silently truncating an unfiltered read-all (CR-H046).
 
         protected override async Task<IEnumerable<T>> ReadCoreAsync(Expression<Func<T, bool>>? filter = null, OrderBy<T>? orderBy = null, int? limit = null, int? offset = null, CancellationToken ct = default)
         {
