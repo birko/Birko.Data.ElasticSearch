@@ -59,8 +59,9 @@ namespace Birko.Data.ElasticSearch.Repositories
         /// <returns>The count of matching documents.</returns>
         public virtual long Count(Nest.QueryContainer query)
         {
-            var _store = Store;
-            return (_store as ElasticSearchStore<TModel>)?.Count(query) ?? 0;
+            // Use the unwrapping property (CR-M090): a plain 'Store as ElasticSearchStore<TModel>'
+            // returns null for a wrapped store (e.g. tenant wrapper), so Count silently returned 0.
+            return ElasticSearchStore?.Count(query) ?? 0;
         }
 
         #endregion
@@ -72,8 +73,8 @@ namespace Birko.Data.ElasticSearch.Repositories
         /// </summary>
         public void ClearCache()
         {
-            var _store = Store;
-            (_store as ElasticSearchStore<TModel>)?.ClearCache();
+            // CR-M090: unwrap so ClearCache is not a silent no-op for a wrapped store.
+            ElasticSearchStore?.ClearCache();
         }
 
         #endregion
