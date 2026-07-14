@@ -16,6 +16,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Repositories\AsyncElasticSearchModelRepository.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchStore.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\Settings.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Stores\ElasticSearchStoreHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)UnitOfWork\ElasticSearchUnitOfWork.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)IndexManagement\IndexInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)IndexManagement\IndexManager.cs" />

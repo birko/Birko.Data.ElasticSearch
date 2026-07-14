@@ -222,7 +222,7 @@ namespace Birko.Data.ElasticSearch.Aggregation
                             var row = new Dictionary<string, object?>();
                             foreach (var field in query.GroupByFields)
                             {
-                                if (bucket.Key.TryGetValue(field, out string keyValue))
+                                if (bucket.Key.TryGetValue(field, out string? keyValue))
                                     row[field] = keyValue;
                             }
                             ExtractMetricsFromBucket(bucket, query.Aggregates, row);

@@ -245,6 +245,8 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task DeleteAsync(Expression<Func<T, bool>> filter, CancellationToken ct = default)
         {
+            // CR-L111: lazy-init the index and observe an already-cancelled token, like every base CRUD method.
+            await EnsureInitializedAsync(ct).ConfigureAwait(false);
             if (Connector == null) return;
 
             var indexName = GetIndexName();
@@ -257,28 +259,18 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task UpdateAsync(Expression<Func<T, bool>> filter, Data.Stores.PropertyUpdate<T> updates, CancellationToken ct = default)
         {
+            // CR-L111: lazy-init the index and observe an already-cancelled token, like every base CRUD method.
+            await EnsureInitializedAsync(ct).ConfigureAwait(false);
             if (Connector == null || updates.Assignments.Count == 0) return;
 
             var indexName = GetIndexName();
-            var scriptParts = new List<string>();
-            var scriptParams = new Dictionary<string, object>();
-
-            foreach (var (property, value) in updates.Assignments)
-            {
-                var memberExpr = property.Body is UnaryExpression unary
-                    ? (MemberExpression)unary.Operand
-                    : (MemberExpression)property.Body;
-
-                var fieldName = char.ToLowerInvariant(memberExpr.Member.Name[0]) + memberExpr.Member.Name.Substring(1);
-                var paramName = "p_" + memberExpr.Member.Name;
-                scriptParts.Add($"ctx._source.{fieldName} = params.{paramName}");
-                scriptParams[paramName] = value ?? string.Empty;
-            }
+            // CR-L113: the PropertyUpdate -> Painless script builder is shared with the sync store.
+            var (script, scriptParams) = ElasticSearchStoreHelper.BuildUpdateScript(updates);
 
             await Connector.UpdateByQueryAsync(new Nest.UpdateByQueryRequest(indexName)
             {
                 Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter),
-                Script = new Nest.InlineScript(string.Join("; ", scriptParts))
+                Script = new Nest.InlineScript(script)
                 {
                     Params = scriptParams
                 }
@@ -351,10 +343,20 @@ namespace Birko.Data.ElasticSearch.Stores
                     bulkResponse.OriginalException);
             }
 
+            // CR-L114: surface per-item failures inside an otherwise-valid bulk response, rather than
+            // discarding them so the caller wrongly believes the whole batch succeeded. This matches the
+            // single-item paths (which throw on failure) and the UnitOfWork commit path.
+            // NOTE: ES bulk is not atomic — the successful items have already been persisted server-side
+            // when this throws, so the exception signals "at least one item failed", not a full rollback.
             if (bulkResponse.Errors && bulkResponse.ItemsWithErrors.Any())
             {
                 var errorCount = bulkResponse.ItemsWithErrors.Count();
-                // TODO: Add logging here
+                var partialErrors = string.Join("\n", bulkResponse.ItemsWithErrors.Take(10).Select(item =>
+                    $"Index: {item.Index}, Id: {item.Id}, Error: {item.Error?.Reason ?? item.Error?.Type ?? "Unknown"}"));
+
+                throw new InvalidOperationException(
+                    $"Bulk operation completed with {errorCount} per-item error(s). Index: {indexName}.\n" +
+                    $"First few errors:\n{partialErrors}");
             }
         }
 
@@ -726,53 +728,8 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <returns>The validated and sanitized index name.</returns>
         public string GetIndexName()
         {
-            if (_settings == null)
-            {
-                throw new InvalidOperationException("Settings not initialized. Call SetSettings() first.");
-            }
-
-            if (string.IsNullOrWhiteSpace(_settings.Name))
-            {
-                throw new InvalidOperationException("Settings.Name cannot be empty");
-            }
-
-            var type = typeof(T);
-            string indexName = _settings.IndexSettings?.FirstOrDefault(x => x.TypeName == type.FullName)?.Name ?? type.Name;
-
-            // Sanitize index name according to ElasticSearch rules
-            var sanitizedIndexName = $"{_settings.Name}_{indexName}"
-                .ToLower()
-                .Trim()
-                .Replace(" ", "_")
-                .Replace("#", "_")
-                .Replace("\\", "_")
-                .Replace("/", "_")
-                .Replace("*", "_")
-                .Replace("?", "_")
-                .Replace("\"", "_")
-                .Replace("<", "_")
-                .Replace(">", "_")
-                .Replace("|", "_")
-                .Replace(",", "_")
-                .Replace("+", "_")
-                .Replace("`", "_");
-
-            // Remove invalid starting characters
-            while (sanitizedIndexName.StartsWith("_") ||
-                   sanitizedIndexName.StartsWith("-") ||
-                   sanitizedIndexName.StartsWith("."))
-            {
-                sanitizedIndexName = sanitizedIndexName.Substring(1);
-            }
-
-            if (string.IsNullOrWhiteSpace(sanitizedIndexName) || sanitizedIndexName.Length > 255)
-            {
-                throw new InvalidOperationException(
-                    $"Invalid index name generated: '{sanitizedIndexName}'. " +
-                    $"Index names must be 1-255 characters and cannot contain special characters.");
-            }
-
-            return sanitizedIndexName;
+            // CR-L113: index-name resolution + sanitization is shared with the sync store via the helper.
+            return ElasticSearchStoreHelper.ResolveIndexName(_settings, typeof(T));
         }
 
         /// <summary>
