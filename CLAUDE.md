@@ -135,6 +135,26 @@ public IEnumerable<Product> Search(string query)
 }
 ```
 
+### Filter translation (`ElasticSearch.ParseExpression`)
+
+Store CRUD filters (`Expression<Func<T, bool>>`) are translated to NEST queries by the hand-rolled
+`ElasticSearch.ParseExpression`. Supported forms — kept in parity with the SQL parser and the native-LINQ
+backends (verified in `Birko.Data.ElasticSearch.Tests.ExpressionDivergenceTests`):
+
+- Comparisons `== != < <= > >=` (→ term / numeric range), and `== null` / `!= null` (→ must-not-exists / exists)
+- Logical combinators: `&&`/`||` **and** the bitwise `&`/`|` on booleans (→ bool must / should), plus `!` (→ must-not)
+- Bare boolean member `x => x.IsActive` (→ `IsActive == true`) and constant predicates `x => true` / `x => false`
+  (→ `MatchAllQuery` / `MatchNoneQuery`; `x => true` is the idiomatic "read all" filter)
+- String `StartsWith` (→ prefix), `EndsWith` (→ leading-wildcard, the `LIKE '%x'` equivalent), `Contains` (→ query-string),
+  `IsNullOrEmpty`
+- The IN pattern `collection.Contains(x.Member)` (→ terms query) and array membership `x.ArrayMember.Contains(value)`
+  (→ term)
+- Nullable `x.NullableProp.HasValue` (→ exists), `Any(...)` on nested collections (→ nested query), and `MultiMatch`
+
+Caveat: `ToLower()`/`ToUpper()` are treated as transparent (the wrapped column resolves, but the case
+transformation is not applied) — case-insensitivity is delegated to the field's analyzer, mirroring how the
+SQL parser delegates to the column collation.
+
 ## Index Mapping
 
 Define mapping for your types:

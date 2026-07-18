@@ -70,34 +70,68 @@ namespace Birko.Data.ElasticSearch
         private static QueryBase? ParseLambda(LambdaExpression lambda, string? fieldPrefix)
         {
             var type = lambda.Parameters.FirstOrDefault()?.Type;
-            return ParseExpression(lambda.Body, type, fieldPrefix);
+            return ParsePredicate(lambda.Body, type, fieldPrefix);
+        }
+
+        /// <summary>
+        /// Parses an expression that appears in BOOLEAN (predicate) position — a lambda body, an operand of
+        /// &amp;&amp; / || / &amp; / |, or the operand of !. Unlike <see cref="ParseExpression"/>, a bare
+        /// boolean member (<c>x.IsActive</c>) becomes <c>IsActive == true</c> and a constant boolean
+        /// (<c>x =&gt; true</c>) becomes a match-all / match-none query, rather than a value-carrying term.
+        /// </summary>
+        private static QueryBase? ParsePredicate(Expression expr, Type? exprType, string? fieldPrefix)
+        {
+            // Unwrap Convert(..., object) inserted by Func<T, object> filters.
+            if (expr is UnaryExpression convert && convert.NodeType == ExpressionType.Convert)
+                return ParsePredicate(convert.Operand, exprType, fieldPrefix);
+
+            // Constant-foldable boolean predicate: x => true, x => false, closure bool, 1 < 2, etc.
+            if (expr.Type == typeof(bool) && !ContainsParameter(expr))
+            {
+                if (EvaluateExpression(expr) is bool b)
+                    return b ? new MatchAllQuery() : (QueryBase)new MatchNoneQuery();
+            }
+
+            // Bare boolean member of the parameter: x => x.IsActive → IsActive == true.
+            if (expr is MemberExpression member && member.Type == typeof(bool)
+                && exprType != null && IsDirectMemberOfParameter(member, exprType))
+            {
+                var name = FormatFieldName(member.Member.Name, fieldPrefix);
+                return name != null ? new TermQuery { Field = name, Value = true } : null;
+            }
+
+            return ParseExpression(expr, exprType, fieldPrefix);
         }
 
         private static QueryBase? ParseBinary(BinaryExpression binary, Type? exprType, string? fieldPrefix)
         {
             switch (binary.NodeType)
             {
+                // Short-circuit && and bitwise & on booleans both mean logical AND in a predicate.
                 case ExpressionType.AndAlso:
-                    {
-                        var leftQuery = ParseExpression(binary.Left, exprType, fieldPrefix);
-                        var rightQuery = ParseExpression(binary.Right, exprType, fieldPrefix);
-                        var queries = new List<QueryContainer>(2);
-                        if (leftQuery != null) queries.Add(new(leftQuery));
-                        if (rightQuery != null) queries.Add(new(rightQuery));
-                        return queries.Count > 0 ? new BoolQuery { Must = queries } : null;
-                    }
+                    return CombineBool(binary, isOr: false, exprType, fieldPrefix);
+                case ExpressionType.And when binary.Type == typeof(bool):
+                    return CombineBool(binary, isOr: false, exprType, fieldPrefix);
+                // Short-circuit || and bitwise | on booleans both mean logical OR in a predicate.
                 case ExpressionType.OrElse:
-                    {
-                        var leftQuery = ParseExpression(binary.Left, exprType, fieldPrefix);
-                        var rightQuery = ParseExpression(binary.Right, exprType, fieldPrefix);
-                        var queries = new List<QueryContainer>(2);
-                        if (leftQuery != null) queries.Add(new(leftQuery));
-                        if (rightQuery != null) queries.Add(new(rightQuery));
-                        return queries.Count > 0 ? new BoolQuery { Should = queries } : null;
-                    }
+                    return CombineBool(binary, isOr: true, exprType, fieldPrefix);
+                case ExpressionType.Or when binary.Type == typeof(bool):
+                    return CombineBool(binary, isOr: true, exprType, fieldPrefix);
                 default:
                     return ParseComparison(binary, exprType, fieldPrefix);
             }
+        }
+
+        private static QueryBase? CombineBool(BinaryExpression binary, bool isOr, Type? exprType, string? fieldPrefix)
+        {
+            var leftQuery = ParsePredicate(binary.Left, exprType, fieldPrefix);
+            var rightQuery = ParsePredicate(binary.Right, exprType, fieldPrefix);
+            var queries = new List<QueryContainer>(2);
+            if (leftQuery != null) queries.Add(new(leftQuery));
+            if (rightQuery != null) queries.Add(new(rightQuery));
+            if (queries.Count == 0)
+                return null;
+            return isOr ? new BoolQuery { Should = queries } : new BoolQuery { Must = queries };
         }
 
         private static QueryBase? ParseComparison(BinaryExpression binary, Type? exprType, string? fieldPrefix)
@@ -178,6 +212,9 @@ namespace Birko.Data.ElasticSearch
                 "StartsWith" =>
                     ParseStartsWith(call, exprType, fieldPrefix),
 
+                "EndsWith" =>
+                    ParseEndsWith(call, exprType, fieldPrefix),
+
                 "Contains" =>
                     ParseContains(call, exprType, fieldPrefix),
 
@@ -187,8 +224,19 @@ namespace Birko.Data.ElasticSearch
                 "Any" =>
                     ParseAny(call, exprType, fieldPrefix),
 
-                _ => new TermQuery { Value = EvaluateExpression(call) }
+                // Case-normalising calls have no term/keyword ES equivalent; treat them as transparent so the
+                // wrapped column still resolves (case-sensitivity is delegated to the field's analyzer).
+                "ToLower" or "ToLowerInvariant" or "ToUpper" or "ToUpperInvariant" =>
+                    ParseExpression(call.Object, exprType, fieldPrefix),
+
+                _ => ParseConstantCall(call)
             };
+        }
+
+        private static QueryBase? ParseConstantCall(MethodCallExpression call)
+        {
+            var value = EvaluateExpression(call);
+            return value != null ? new TermQuery { Value = value } : null;
         }
 
         private static QueryBase? ParseIsNullOrEmpty(MethodCallExpression call, Type? exprType, string? fieldPrefix)
@@ -214,15 +262,72 @@ namespace Birko.Data.ElasticSearch
             return new PrefixQuery { Field = swField.Field, Value = swVal.Value };
         }
 
-        private static QueryBase? ParseContains(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        private static QueryBase? ParseEndsWith(MethodCallExpression call, Type? exprType, string? fieldPrefix)
         {
-            var cField = ParseExpression(call.Object, exprType, fieldPrefix) as ITermQuery;
-            var cVal = ParseExpression(call.Arguments.First(), exprType, fieldPrefix) as ITermQuery;
+            var ewField = ParseExpression(call.Object, exprType, fieldPrefix) as ITermQuery;
+            var ewVal = ParseExpression(call.Arguments.First(), exprType, fieldPrefix) as ITermQuery;
 
-            if (cField?.Field == null || cVal?.Value == null)
+            if (ewField?.Field == null || ewVal?.Value == null)
                 return null;
 
-            return new QueryStringQuery { DefaultField = cField.Field, Query = (string)cVal.Value };
+            // "ends with x" has no dedicated ES query; a leading-wildcard match is the equivalent of SQL LIKE '%x'.
+            return new WildcardQuery { Field = ewField.Field, Value = "*" + ewVal.Value };
+        }
+
+        private static QueryBase? ParseContains(MethodCallExpression call, Type? exprType, string? fieldPrefix)
+        {
+            // String.Contains(substring) → substring match (mirrors SQL LIKE '%x%').
+            if (call.Method.DeclaringType == typeof(string))
+            {
+                var cField = ParseExpression(call.Object, exprType, fieldPrefix) as ITermQuery;
+                var cVal = ParseExpression(call.Arguments.First(), exprType, fieldPrefix) as ITermQuery;
+
+                if (cField?.Field == null || cVal?.Value == null)
+                    return null;
+
+                return new QueryStringQuery { DefaultField = cField.Field, Query = (string)cVal.Value };
+            }
+
+            // Collection.Contains(...) — either constCollection.Contains(x.Member) (the IN pattern) or
+            // x.ArrayMember.Contains(constValue) (array membership). The field is the parameter-bound operand;
+            // the other operand supplies the value(s).
+            Expression? a = call.Object;
+            Expression? b;
+            if (a != null)
+            {
+                // instance form: a.Contains(b)
+                b = call.Arguments.FirstOrDefault();
+            }
+            else
+            {
+                // static Enumerable.Contains(source, item)
+                a = call.Arguments.ElementAtOrDefault(0);
+                b = call.Arguments.ElementAtOrDefault(1);
+            }
+            if (a == null || b == null)
+                return null;
+
+            Expression fieldExpr, valueExpr;
+            if (ContainsParameter(a) && !ContainsParameter(b)) { fieldExpr = a; valueExpr = b; }
+            else if (ContainsParameter(b) && !ContainsParameter(a)) { fieldExpr = b; valueExpr = a; }
+            else return null;
+
+            var fieldQuery = ParseExpression(fieldExpr, exprType, fieldPrefix) as ITermQuery;
+            if (fieldQuery?.Field == null)
+                return null;
+
+            var value = EvaluateExpression(valueExpr);
+            if (value == null)
+                return null;
+
+            // A collection value → terms query (IN); a scalar → single term (array membership).
+            if (value is System.Collections.IEnumerable enumerable && value is not string)
+            {
+                var terms = enumerable.Cast<object>().Where(v => v != null).ToArray();
+                return terms.Length > 0 ? new TermsQuery { Field = fieldQuery.Field, Terms = terms } : null;
+            }
+
+            return new TermQuery { Field = fieldQuery.Field, Value = value };
         }
 
         private static QueryBase? ParseMultiMatch(MethodCallExpression call, Type? exprType, string? fieldPrefix)
@@ -313,7 +418,7 @@ namespace Birko.Data.ElasticSearch
 
         private static QueryBase? ParseNot(UnaryExpression unary, Type? exprType, string? fieldPrefix)
         {
-            var operandQuery = ParseExpression(unary.Operand, exprType, fieldPrefix);
+            var operandQuery = ParsePredicate(unary.Operand, exprType, fieldPrefix);
             if (operandQuery == null)
                 return null;
 
@@ -382,6 +487,12 @@ namespace Birko.Data.ElasticSearch
 
         private static object? EvaluateExpression(Expression expr)
         {
+            // Parameter-bound sub-expressions have no runtime value. Never attempt to compile/evaluate them —
+            // doing so throws "variable 'x' referenced from scope '', but it is not defined". Callers that
+            // reach here with a parameter-bound node (e.g. an unrecognised method call) get null instead.
+            if (ContainsParameter(expr))
+                return null;
+
             if (expr is ConstantExpression c)
                 return c.Value;
 
@@ -409,6 +520,14 @@ namespace Birko.Data.ElasticSearch
 
             if (expr is MethodCallExpression mce)
             {
+                // Unwrap implicit/explicit conversion operators — e.g. the int[] → ReadOnlySpan<int> that
+                // .NET binds for MemoryExtensions.Contains. Evaluate the source operand (the array), not the
+                // ref-struct conversion, which reflection cannot invoke.
+                if (mce.Method.IsSpecialName
+                    && (mce.Method.Name == "op_Implicit" || mce.Method.Name == "op_Explicit")
+                    && mce.Arguments.Count == 1)
+                    return EvaluateExpression(mce.Arguments[0]);
+
                 object? instance = mce.Object != null ? EvaluateExpression(mce.Object) : null;
                 var args = new object?[mce.Arguments.Count];
                 for (int i = 0; i < mce.Arguments.Count; i++)
