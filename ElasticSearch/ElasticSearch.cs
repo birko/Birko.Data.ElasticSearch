@@ -70,7 +70,11 @@ namespace Birko.Data.ElasticSearch
         private static QueryBase? ParseLambda(LambdaExpression lambda, string? fieldPrefix)
         {
             var type = lambda.Parameters.FirstOrDefault()?.Type;
-            return ParsePredicate(lambda.Body, type, fieldPrefix);
+            // Canonicalise once at the lambda boundary via the shared normalizer (Birko.Data.Core):
+            // funcletize parameter-free subtrees and desugar boolean ternary (c ? t : f) and boolean
+            // null-coalescing (a ?? b) into AND/OR/NOT, which the query builder below already handles.
+            var body = Birko.Data.Expressions.ExpressionNormalizer.Normalize(lambda.Body) ?? lambda.Body;
+            return ParsePredicate(body, type, fieldPrefix);
         }
 
         /// <summary>
@@ -136,6 +140,13 @@ namespace Birko.Data.ElasticSearch
 
         private static QueryBase? ParseComparison(BinaryExpression binary, Type? exprType, string? fieldPrefix)
         {
+            // Value-expression operand — column arithmetic (x.A + x.B > 5), value null-coalescing
+            // ((x.Score ?? 0) > 5) or a value-position ternary ((x.Vip ? x.A : x.B) > 5, i.e. CASE compared
+            // to something). These cannot be expressed as a term/range query, so emit a Painless script
+            // query instead. (Boolean-typed ?:/?? were already desugared to AND/OR by the normalizer.)
+            if (IsScriptValueOperand(UnwrapConvertEs(binary.Left)) || IsScriptValueOperand(UnwrapConvertEs(binary.Right)))
+                return BuildScriptComparison(binary, exprType, fieldPrefix);
+
             var left = ParseExpression(binary.Left, exprType, fieldPrefix) as ITermQuery;
             var right = ParseExpression(binary.Right, exprType, fieldPrefix) as ITermQuery;
 
@@ -197,6 +208,189 @@ namespace Birko.Data.ElasticSearch
             {
                 return null;
             }
+        }
+
+        // ---- Painless script queries for value-expression operands (arithmetic / value-?? / value-CASE) ----
+
+        private static Expression UnwrapConvertEs(Expression expr)
+            => expr is UnaryExpression u && u.NodeType is ExpressionType.Convert or ExpressionType.ConvertChecked
+                ? UnwrapConvertEs(u.Operand)
+                : expr;
+
+        private static bool IsArithmeticEs(ExpressionType type)
+            => type is ExpressionType.Add or ExpressionType.AddChecked
+                or ExpressionType.Subtract or ExpressionType.SubtractChecked
+                or ExpressionType.Multiply or ExpressionType.MultiplyChecked
+                or ExpressionType.Divide or ExpressionType.Modulo;
+
+        /// <summary>True for an operand ES must render as a Painless value: arithmetic, coalescing, or a ternary.</summary>
+        private static bool IsScriptValueOperand(Expression expr)
+            => (expr is BinaryExpression b && (IsArithmeticEs(b.NodeType) || b.NodeType == ExpressionType.Coalesce))
+                || expr is ConditionalExpression;
+
+        private static bool IsNumericTypeEs(Type type)
+        {
+            type = Nullable.GetUnderlyingType(type) ?? type;
+            return Type.GetTypeCode(type) is TypeCode.Byte or TypeCode.SByte
+                or TypeCode.Int16 or TypeCode.UInt16 or TypeCode.Int32 or TypeCode.UInt32
+                or TypeCode.Int64 or TypeCode.UInt64 or TypeCode.Single or TypeCode.Double or TypeCode.Decimal;
+        }
+
+        private static string? ScriptComparisonOperator(ExpressionType type) => type switch
+        {
+            ExpressionType.Equal => "==",
+            ExpressionType.NotEqual => "!=",
+            ExpressionType.LessThan => "<",
+            ExpressionType.LessThanOrEqual => "<=",
+            ExpressionType.GreaterThan => ">",
+            ExpressionType.GreaterThanOrEqual => ">=",
+            _ => null,
+        };
+
+        /// <summary>
+        /// Builds a Painless <see cref="ScriptQuery"/> for a comparison whose operand(s) are value-expressions.
+        /// Fields accessed outside a coalesce are collected and guarded with an existence precondition so a
+        /// missing/null field yields <c>false</c> (matching C# null-propagation → the doc is excluded) instead
+        /// of a Painless runtime error. Throws <see cref="NotSupportedException"/> for anything it cannot
+        /// faithfully script, rather than silently dropping the filter.
+        /// </summary>
+        private static QueryBase? BuildScriptComparison(BinaryExpression binary, Type? exprType, string? fieldPrefix)
+        {
+            var op = ScriptComparisonOperator(binary.NodeType);
+            if (op == null)
+                throw new NotSupportedException($"Cannot script comparison operator {binary.NodeType} for ElasticSearch.");
+
+            var required = new HashSet<string>();
+            var leftScript = ScriptValue(binary.Left, exprType, fieldPrefix, required);
+            var rightScript = ScriptValue(binary.Right, exprType, fieldPrefix, required);
+
+            var body = $"({leftScript} {op} {rightScript})";
+            var script = required.Count == 0
+                ? body
+                : $"({string.Join(" && ", required.Select(f => $"doc['{f}'].size() > 0"))}) ? {body} : false";
+
+            return new ScriptQuery { Script = new InlineScript(script) };
+        }
+
+        private static string ScriptValue(Expression expr, Type? exprType, string? fieldPrefix, HashSet<string> required)
+        {
+            expr = UnwrapConvertEs(expr);
+            switch (expr)
+            {
+                case ConditionalExpression cond:
+                    return $"({ScriptBool(cond.Test, exprType, fieldPrefix, required)} ? "
+                        + $"{ScriptValue(cond.IfTrue, exprType, fieldPrefix, required)} : "
+                        + $"{ScriptValue(cond.IfFalse, exprType, fieldPrefix, required)})";
+                case BinaryExpression b when IsArithmeticEs(b.NodeType):
+                {
+                    var op = b.NodeType switch
+                    {
+                        ExpressionType.Add or ExpressionType.AddChecked => "+",
+                        ExpressionType.Subtract or ExpressionType.SubtractChecked => "-",
+                        ExpressionType.Multiply or ExpressionType.MultiplyChecked => "*",
+                        ExpressionType.Divide => "/",
+                        ExpressionType.Modulo => "%",
+                        _ => throw new NotSupportedException($"Unsupported arithmetic operator {b.NodeType}"),
+                    };
+                    return $"({ScriptValue(b.Left, exprType, fieldPrefix, required)} {op} {ScriptValue(b.Right, exprType, fieldPrefix, required)})";
+                }
+                case BinaryExpression b when b.NodeType == ExpressionType.Coalesce:
+                {
+                    // a ?? c — a's absence is handled here, so it is NOT added to the required-existence guard.
+                    var inner = UnwrapConvertEs(b.Left);
+                    if (inner is MemberExpression cm && TryScriptFieldName(cm, exprType, fieldPrefix, out var cfield))
+                    {
+                        var fallback = ScriptValue(b.Right, exprType, fieldPrefix, required);
+                        return $"(doc['{cfield}'].size() == 0 ? {fallback} : doc['{cfield}'].value)";
+                    }
+                    if (!ContainsParameter(inner))
+                    {
+                        var lv = EvaluateExpression(inner);
+                        return lv != null ? ScriptConstant(lv) : ScriptValue(b.Right, exprType, fieldPrefix, required);
+                    }
+                    throw new NotSupportedException("ElasticSearch script coalescing supports only `field ?? value`.");
+                }
+                case MemberExpression valueMember when valueMember.Member.Name == "Value"
+                    && valueMember.Member.ReflectedType != null
+                    && Nullable.GetUnderlyingType(valueMember.Member.ReflectedType) != null
+                    && valueMember.Expression is MemberExpression innerNullable:
+                    return ScriptValue(innerNullable, exprType, fieldPrefix, required);
+                case MemberExpression m when TryScriptFieldName(m, exprType, fieldPrefix, out var field):
+                    required.Add(field);
+                    return $"doc['{field}'].value";
+                default:
+                    if (!ContainsParameter(expr))
+                        return ScriptConstant(EvaluateExpression(expr));
+                    throw new NotSupportedException($"Cannot translate operand '{expr}' into an ElasticSearch script value.");
+            }
+        }
+
+        private static string ScriptBool(Expression expr, Type? exprType, string? fieldPrefix, HashSet<string> required)
+        {
+            expr = UnwrapConvertEs(expr);
+            switch (expr)
+            {
+                case UnaryExpression u when u.NodeType == ExpressionType.Not:
+                    return $"(!{ScriptBool(u.Operand, exprType, fieldPrefix, required)})";
+                case BinaryExpression b when b.NodeType is ExpressionType.AndAlso or ExpressionType.And:
+                    return $"({ScriptBool(b.Left, exprType, fieldPrefix, required)} && {ScriptBool(b.Right, exprType, fieldPrefix, required)})";
+                case BinaryExpression b when b.NodeType is ExpressionType.OrElse or ExpressionType.Or:
+                    return $"({ScriptBool(b.Left, exprType, fieldPrefix, required)} || {ScriptBool(b.Right, exprType, fieldPrefix, required)})";
+                case BinaryExpression b when b.NodeType is ExpressionType.Equal or ExpressionType.NotEqual
+                        && (IsNullConstantEs(b.Left) || IsNullConstantEs(b.Right)):
+                {
+                    var operand = UnwrapConvertEs(IsNullConstantEs(b.Right) ? b.Left : b.Right);
+                    if (operand is MemberExpression nm && TryScriptFieldName(nm, exprType, fieldPrefix, out var nfield))
+                        return b.NodeType == ExpressionType.Equal ? $"(doc['{nfield}'].size() == 0)" : $"(doc['{nfield}'].size() > 0)";
+                    throw new NotSupportedException("ElasticSearch script null-check supports only a direct field.");
+                }
+                case BinaryExpression b when ScriptComparisonOperator(b.NodeType) is string cop:
+                    return $"({ScriptValue(b.Left, exprType, fieldPrefix, required)} {cop} {ScriptValue(b.Right, exprType, fieldPrefix, required)})";
+                case MemberExpression m when TryScriptFieldName(m, exprType, fieldPrefix, out var field)
+                        && (Nullable.GetUnderlyingType(m.Type) ?? m.Type) == typeof(bool):
+                    required.Add(field);
+                    return $"doc['{field}'].value";
+                default:
+                    if (!ContainsParameter(expr) && EvaluateExpression(expr) is bool cb)
+                        return cb ? "true" : "false";
+                    throw new NotSupportedException($"Cannot translate boolean sub-expression '{expr}' into an ElasticSearch script.");
+            }
+        }
+
+        private static bool IsNullConstantEs(Expression expr)
+            => UnwrapConvertEs(expr) is ConstantExpression c && c.Value == null;
+
+        private static bool TryScriptFieldName(MemberExpression member, Type? exprType, string? fieldPrefix, out string field)
+        {
+            field = string.Empty;
+            if (exprType == null || !IsDirectMemberOfParameter(member, exprType))
+                return false;
+            var name = FormatFieldName(member.Member.Name, fieldPrefix);
+            if (name == null)
+                return false;
+            if (member.Type == typeof(string) && !name.EndsWith(".keyword", StringComparison.OrdinalIgnoreCase))
+                name += ".keyword";
+            field = name;
+            return true;
+        }
+
+        private static string ScriptConstant(object? value)
+        {
+            switch (value)
+            {
+                case null:
+                    return "null";
+                case bool b:
+                    return b ? "true" : "false";
+                case string s:
+                    return "'" + s.Replace("\\", "\\\\").Replace("'", "\\'") + "'";
+                case Enum e:
+                    return Convert.ToInt64(e, System.Globalization.CultureInfo.InvariantCulture)
+                        .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            if (IsNumericTypeEs(value.GetType()))
+                return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!;
+            throw new NotSupportedException($"Cannot inline a constant of type {value.GetType()} into an ElasticSearch script.");
         }
 
         private static QueryBase? ParseMethodCall(MethodCallExpression call, Type? exprType, string? fieldPrefix)
@@ -482,6 +676,8 @@ namespace Birko.Data.ElasticSearch
                 return ContainsParameter(ue.Operand);
             if (expr is BinaryExpression be)
                 return ContainsParameter(be.Left) || ContainsParameter(be.Right);
+            if (expr is ConditionalExpression ce)
+                return ContainsParameter(ce.Test) || ContainsParameter(ce.IfTrue) || ContainsParameter(ce.IfFalse);
             return false;
         }
 

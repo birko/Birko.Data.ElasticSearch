@@ -150,10 +150,30 @@ backends (verified in `Birko.Data.ElasticSearch.Tests.ExpressionDivergenceTests`
 - The IN pattern `collection.Contains(x.Member)` (→ terms query) and array membership `x.ArrayMember.Contains(value)`
   (→ term)
 - Nullable `x.NullableProp.HasValue` (→ exists), `Any(...)` on nested collections (→ nested query), and `MultiMatch`
+- **Ternary `c ? t : f` and null-coalescing `a ?? b`** (boolean position) — `ParseLambda` runs the shared
+  `Birko.Data.Expressions.ExpressionNormalizer` (Birko.Data.Core) at the lambda boundary first, which
+  funcletizes parameter-free subtrees and desugars a boolean ternary to `(c && t) || (!c && f)` and a
+  boolean `a ?? b` to `(a == true) || (a == null && b)`. ES then translates the resulting AND/OR/NOT tree
+  with no ternary-specific code. Same normalizer the SQL parser adopted (STORY-047).
+- **Value-expression operands → Painless script query** — column arithmetic (`x.A + x.B > 5`),
+  value null-coalescing (`(x.Score ?? 0) > 5`) and a value-position ternary compared to something
+  (`(x.Vip ? x.A : x.B) > 5`) cannot be a term/range query, so `ParseComparison` emits a
+  `ScriptQuery` with a Painless script (`ScriptValue` / `ScriptBool` / `ScriptConstant`). Field access
+  is `doc['field'].value`; a `??` renders its missing-fallback as `(doc['f'].size() == 0 ? fallback :
+  doc['f'].value)`; every field accessed **outside** a coalesce is collected into an existence guard
+  `(doc['a'].size() > 0 && …) ? (body) : false`, so a missing/null field yields `false` (C#
+  null-propagation → doc excluded) instead of a Painless runtime error. Constants inline as portable
+  literals (numeric / bool / enum→int / escaped string); non-scriptable shapes throw
+  `NotSupportedException` rather than silently dropping the filter.
 
 Caveat: `ToLower()`/`ToUpper()` are treated as transparent (the wrapped column resolves, but the case
 transformation is not applied) — case-insensitivity is delegated to the field's analyzer, mirroring how the
 SQL parser delegates to the column collation.
+
+Note: the script-query path needs the referenced fields to be `doc_values`-enabled (the default for
+numeric/keyword/boolean; `text` fields are not — use their `.keyword` sub-field, which the renderer already
+appends for strings). Runtime cost is per-document script evaluation, so scope such filters with other
+term/range clauses where possible.
 
 ## Index Mapping
 
