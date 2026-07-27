@@ -139,7 +139,7 @@ namespace Birko.Data.ElasticSearch.Stores
                 {
                     Size = 1,
                     From = 0,
-                    Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
+                    Query = Data.ElasticSearch.ElasticSearch.ParseFilterQuery(filter)
                 };
                 var searchResponse = Connector!.Search<T>(query);
 
@@ -280,7 +280,7 @@ namespace Birko.Data.ElasticSearch.Stores
             var indexName = GetIndexName();
             Connector.DeleteByQuery(new Nest.DeleteByQueryRequest(indexName)
             {
-                Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter)
+                Query = Data.ElasticSearch.ElasticSearch.ParseRequiredFilterQuery(filter)
             });
         }
 
@@ -297,7 +297,7 @@ namespace Birko.Data.ElasticSearch.Stores
 
             Connector.UpdateByQuery(new Nest.UpdateByQueryRequest(indexName)
             {
-                Query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter),
+                Query = Data.ElasticSearch.ElasticSearch.ParseRequiredFilterQuery(filter),
                 Script = new Nest.InlineScript(script)
                 {
                     Params = scriptParams
@@ -394,7 +394,7 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         protected override long CountCore(Expression<Func<T, bool>>? filter = null)
         {
-            return Count(filter != null ? Data.ElasticSearch.ElasticSearch.ParseExpression(filter) : null);
+            return Count(Data.ElasticSearch.ElasticSearch.ParseFilterQuery(filter));
         }
 
         /// <summary>
@@ -442,7 +442,7 @@ namespace Birko.Data.ElasticSearch.Stores
             int? limit = null,
             int? offset = null)
         {
-            var query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter);
+            var query = Data.ElasticSearch.ElasticSearch.ParseFilterQuery(filter);
             foreach (var item in ReadStream(query, orderBy, limit, offset))
             {
                 yield return item;
@@ -649,7 +649,7 @@ namespace Birko.Data.ElasticSearch.Stores
             if (highlightOptions == null) throw new ArgumentNullException(nameof(highlightOptions));
             if (Connector == null) return new HighlightedSearchResults<T>(Array.Empty<SearchResult<T>>(), 0);
 
-            var query = Data.ElasticSearch.ElasticSearch.ParseExpression(filter);
+            var query = Data.ElasticSearch.ElasticSearch.ParseFilterQuery(filter);
             return SearchWithHighlights(query, highlightOptions, orderBy, limit, offset);
         }
 
@@ -876,7 +876,7 @@ namespace Birko.Data.ElasticSearch.Stores
             QueryContainer? filterQuery = null;
             if (query.Filter != null)
             {
-                filterQuery = Data.ElasticSearch.ElasticSearch.ParseExpression(query.Filter);
+                filterQuery = Data.ElasticSearch.ElasticSearch.ParseFilterQuery(query.Filter);
             }
 
             var metricAggregations = StoreAggregationHelper.BuildMetricAggregations(query.Aggregates);

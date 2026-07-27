@@ -52,6 +52,79 @@ namespace Birko.Data.ElasticSearch
             });
         }
 
+        /// <summary>
+        /// Translates a STORE FILTER into a query, enforcing <b>CR-H047</b>: a filter that was supplied but
+        /// cannot be translated must never silently widen to match-all.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <see cref="ParseExpression"/> returns <c>null</c> for any shape it cannot express — an
+        /// unresolvable field, an unparseable operand, an unsupported node type. Assigning that straight to
+        /// a request's <c>Query</c> produces a request with NO query, which ElasticSearch reads as
+        /// match-all: a filtered / existence / permission check silently becomes a full-result set. On a
+        /// <c>_delete_by_query</c> or <c>_update_by_query</c> the same null is far worse than a wrong read.
+        /// </para>
+        /// <para>
+        /// The two meanings of "no rows" are deliberately kept apart, and only one of them is an error:
+        /// a predicate that legitimately matches nothing (an empty or null collection in a
+        /// <c>Contains</c>) is translated to an explicit <c>MatchNoneQuery</c> by
+        /// <c>ParseContains</c> and passes through here untouched. Only "I could not express this" throws.
+        /// </para>
+        /// <para>
+        /// A <c>null</c> <paramref name="filter"/> means no filter was supplied at all, which is a
+        /// different thing again: it returns <c>null</c> so the caller can omit the query and read
+        /// everything on purpose. Callers whose filter is mandatory — the destructive by-query paths —
+        /// must use <see cref="ParseRequiredFilterQuery"/> instead.
+        /// </para>
+        /// </remarks>
+        /// <exception cref="NotSupportedException">The filter was supplied but could not be translated.</exception>
+        public static QueryBase? ParseFilterQuery<T>(Expression<Func<T, bool>>? filter)
+        {
+            if (filter == null)
+            {
+                return null;
+            }
+
+            QueryBase? query;
+            try
+            {
+                query = ParseExpression(filter);
+            }
+            catch (Exception ex)
+            {
+                throw new NotSupportedException(UntranslatableFilterMessage(filter), ex);
+            }
+
+            if (query == null)
+            {
+                throw new NotSupportedException(UntranslatableFilterMessage(filter));
+            }
+
+            return query;
+        }
+
+        /// <summary>
+        /// <see cref="ParseFilterQuery{T}"/> for operations where the filter is MANDATORY — the
+        /// destructive <c>_delete_by_query</c> / <c>_update_by_query</c> paths. A missing filter there
+        /// would mean "every document in the index", which is never an acceptable default for a
+        /// destructive operation, so it is rejected rather than translated.
+        /// </summary>
+        public static QueryBase ParseRequiredFilterQuery<T>(Expression<Func<T, bool>> filter)
+        {
+            if (filter == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(filter),
+                    "A filter is required for a by-query delete/update: a missing filter would target every document in the index.");
+            }
+
+            return ParseFilterQuery(filter)!;
+        }
+
+        private static string UntranslatableFilterMessage(Expression filter)
+            => $"The filter expression could not be translated to an ElasticSearch query: {filter}. "
+             + "Use a simpler filter (binary comparisons, && / ||, and the supported string/collection methods).";
+
         public static QueryBase? ParseExpression(Expression? expr = null, Type? exprType = null, string? fieldPrefix = null)
         {
             return expr switch
