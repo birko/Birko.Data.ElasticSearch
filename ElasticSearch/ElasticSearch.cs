@@ -512,13 +512,33 @@ namespace Birko.Data.ElasticSearch
 
             var value = EvaluateExpression(valueExpr);
             if (value == null)
-                return null;
+            {
+                // A NULL collection is the same case as an empty one: `null.Contains(x)` matches nothing,
+                // as does `x.Tags.Contains(null)`. Returning null dropped the clause and widened the query
+                // (see the MatchNone note below) — the identical defect, one branch earlier, reachable
+                // whenever the collection variable is null rather than empty.
+                return new MatchNoneQuery();
+            }
 
             // A collection value → terms query (IN); a scalar → single term (array membership).
             if (value is System.Collections.IEnumerable enumerable && value is not string)
             {
                 var terms = enumerable.Cast<object>().Where(v => v != null).ToArray();
-                return terms.Length > 0 ? new TermsQuery { Field = fieldQuery.Field, Terms = terms } : null;
+                if (terms.Length > 0)
+                    return new TermsQuery { Field = fieldQuery.Field, Terms = terms };
+
+                // EMPTY collection → matches NOTHING. Returning null here was a silent-wrong-rows bug:
+                // null means "no query produced", and CombineBool DROPS null sub-queries, so
+                // `ids.Contains(x.F) && x.Status == active` with an empty `ids` collapsed to
+                // `x.Status == active` — the membership filter vanished and the query returned everything
+                // matching the remaining clauses. An empty `ids` is a normal outcome of the canonical
+                // batch pattern (fetch parents, then filter children by their ids), so this was reachable
+                // from ordinary code. `MatchNoneQuery` states "matches nothing" explicitly and survives
+                // clause combination. Negation needs no special case: ParseNot wraps this in MustNot, and
+                // "must not match nothing" is every document — the correct reading of an empty NOT IN.
+                // (SQL had the same defect with a milder outcome — see Birko.Data.SQL 0801738, which
+                // renders `1 = 0` / `1 = 1` for the same reason.)
+                return new MatchNoneQuery();
             }
 
             return new TermQuery { Field = fieldQuery.Field, Value = value };
