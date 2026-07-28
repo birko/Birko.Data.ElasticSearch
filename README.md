@@ -194,6 +194,17 @@ ElasticSearch stores support native filter-based update and delete:
 - `Delete(filter)` — Uses `DeleteByQuery` with filter converted via `ParseExpression()`
 - `Update(filter, Action<T>)` — Read-modify-save fallback for complex mutations
 
+### Filter translation notes
+
+- **A filter that cannot be translated throws** `NotSupportedException` — it never widens to match-all. This
+  is enforced on every filter→query conversion, reads and by-query writes alike; the destructive paths
+  additionally reject a null filter with `ArgumentNullException`.
+- **Empty membership sets match nothing.** `ids.Contains(x.Field)` with an empty or null collection emits
+  `MatchNoneQuery` (previously it dropped the clause, silently returning wrong rows); negated, it matches
+  everything.
+- Predicates also accept ternaries, `??`, and column arithmetic (the latter via a guarded Painless script
+  query) — see [CLAUDE.md § Filter translation](CLAUDE.md) for the full supported surface and its caveats.
+
 ## License
 
 Part of the Birko Framework.

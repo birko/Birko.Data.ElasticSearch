@@ -175,6 +175,50 @@ numeric/keyword/boolean; `text` fields are not — use their `.keyword` sub-fiel
 appends for strings). Runtime cost is per-document script evaluation, so scope such filters with other
 term/range clauses where possible.
 
+#### An empty/null collection in `Contains` matches nothing
+
+`ParseContains` returned `null` for an empty terms array, and `CombineBool` **drops** null sub-queries. So
+`ids.Contains(x.Field) && x.Status == active` with an empty `ids` collapsed to `x.Status == active` — the
+membership filter silently vanished and the query returned everything matching the remaining clauses; as the
+only clause it became an unfiltered read. This is the worst variant of the family (SQL either returned no rows
+or raised a syntax error; here the query silently returns **wrong rows**) and it is reachable from ordinary
+code — an empty collection is the normal outcome of the canonical batch pattern (fetch parents, then filter
+children by their ids).
+
+Both branches now emit `MatchNoneQuery` — the store's own vocabulary for a constant-false predicate, matching
+the native-LINQ backends (InMemory/JSON/XML/Raven/Cosmos), where an empty collection contains nothing:
+
+| Input | Query |
+|-------|-------|
+| empty collection | `MatchNoneQuery` |
+| null collection | `MatchNoneQuery` |
+| negated empty | `MustNot(MatchNone)` → every document, mirroring SQL's `1 = 1` for an empty `NOT IN` |
+| single element | still a real `TermsQuery` (boundary) |
+
+#### Untranslatable filters fail loudly at every boundary (CR-H047)
+
+A NEST request with `Query = null` carries no query, which ES reads as **match-all** — so a supplied-but-
+untranslatable filter turned reads into "return everything", and reached `_delete_by_query` /
+`_update_by_query` targeting the whole index. The invariant used to be enforced in
+`ElasticSearchViewStore.BuildFilterQuery` only; the main entity stores assigned the parser's output straight to
+their requests across 14 sites with no null checks. Two shared helpers now own it and every filter→query
+conversion routes through one of them (the view store delegates too, so the paths cannot drift):
+
+| Helper | Null filter | Untranslatable filter |
+|--------|-------------|----------------------|
+| `ParseFilterQuery<T>` (optional filter — reads/counts) | `null` query = read everything **on purpose** | `NotSupportedException` |
+| `ParseRequiredFilterQuery<T>` (destructive by-query paths — Delete/Update) | `ArgumentNullException` | `NotSupportedException` |
+
+The optional/required split matters: `ReadCore`/`ReadCoreAsync` take a **nullable** filter, so a filterless read
+is legitimate and must not throw; only the four genuinely destructive paths use the required variant. Three
+outcomes stay distinct and only one is an error — *no filter supplied* (null query), *matches nothing*
+(`MatchNoneQuery`, a legitimate translation — hence the guard is a null check, not a falsy check), *cannot be
+expressed* (throw).
+
+Deliberately unchanged: the parser still returns `null` for its ~20 other "cannot translate this shape" paths
+rather than throwing at source. Guarding at the boundary is the smaller change and now covers every consumer
+path; moving the throw into the parser is a behaviour change for consumers and remains an open option.
+
 ## Index Mapping
 
 Define mapping for your types:
