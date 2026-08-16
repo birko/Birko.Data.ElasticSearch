@@ -245,6 +245,11 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task DeleteAsync(Expression<Func<T, bool>> filter, CancellationToken ct = default)
         {
+            // TASK-215: this override bypasses AbstractAsyncBulkStore's guard, so it repeats the scope half.
+            // CR-H047's ParseRequiredFilterQuery is a NULL check and a query IS produced here: measured,
+            // `!empty.Contains(x.Field)` renders `bool { must_not: [match_none] }`, which selects every
+            // document while being structurally identical to a legitimate `must_not: [terms]`.
+            RequireBoundedFilter(filter, "delete");
             // CR-L111: lazy-init the index and observe an already-cancelled token, like every base CRUD method.
             await EnsureInitializedAsync(ct).ConfigureAwait(false);
             if (Connector == null) return;
@@ -259,6 +264,8 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override async Task UpdateAsync(Expression<Func<T, bool>> filter, Data.Stores.PropertyUpdate<T> updates, CancellationToken ct = default)
         {
+            // TASK-215 — see DeleteAsync(filter) above.
+            RequireBoundedFilter(filter, "update");
             // CR-L111: lazy-init the index and observe an already-cancelled token, like every base CRUD method.
             await EnsureInitializedAsync(ct).ConfigureAwait(false);
             if (Connector == null || updates.Assignments.Count == 0) return;

@@ -273,6 +273,12 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override void Delete(Expression<Func<T, bool>> filter)
         {
+            // TASK-215: this override bypasses AbstractBulkStore's guard, so it repeats the scope half.
+            // CR-H047's ParseRequiredFilterQuery is a NULL check and a query IS produced here: measured,
+            // `!empty.Contains(x.Field)` renders `bool { must_not: [match_none] }`, which selects every
+            // document while being structurally identical to a legitimate `must_not: [terms]`. Only the
+            // expression distinguishes them. Refused before the index is even opened.
+            RequireBoundedFilter(filter, "delete");
             // CR-L111: lazy-init the index, like every base CRUD method.
             EnsureInitialized();
             if (Connector == null) return;
@@ -287,6 +293,8 @@ namespace Birko.Data.ElasticSearch.Stores
         /// <inheritdoc />
         public override void Update(Expression<Func<T, bool>> filter, Data.Stores.PropertyUpdate<T> updates)
         {
+            // TASK-215 — see Delete(filter) above.
+            RequireBoundedFilter(filter, "update");
             // CR-L111: lazy-init the index, like every base CRUD method.
             EnsureInitialized();
             if (Connector == null || updates.Assignments.Count == 0) return;
