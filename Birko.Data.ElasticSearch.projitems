@@ -9,6 +9,20 @@
     <Import_RootNamespace>Birko.Data.ElasticSearch</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Two forms, one dependency. Under Central Package Management a PackageReference must NOT
+         carry a Version (NU1008) — the consumer's Directory.Packages.props owns it. Three Birko
+         consumers use CPM, so a version-carrying declaration made their solutions unrestorable.
+         Conditioning on the well-known $(ManagePackageVersionsCentrally) serves both.
+
+         Declared HERE and nowhere else in the ElasticSearch family: six sibling projitems
+         (.ViewModel, .Views, BackgroundJobs, Migrations, Sync, Workflow) use Nest too, but a
+         consumer imports them alongside this one, so a second declaration lands in the same project
+         file and restore reports NU1504 — a warning normally, an error under the -warnaserror that
+         verify-conventions runs (TASK-234). -->
+    <PackageReference Include="NEST" Version="7.*" Condition="'$(ManagePackageVersionsCentrally)' != 'true'" />
+    <PackageReference Include="NEST" Condition="'$(ManagePackageVersionsCentrally)' == 'true'" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Extensions\EnumerableExtensions.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Stores\AsyncElasticSearchStore.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ElasticSearch\ElasticSearch.cs" />
