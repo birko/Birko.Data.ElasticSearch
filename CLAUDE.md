@@ -330,6 +330,27 @@ This is an excellent reference implementation for:
 - No complex transactions
 - Memory-intensive for large results
 
+## Transactions: there are none, and the store says so (TASK-240)
+
+Elasticsearch has no transaction concept, and this backend **refuses a boundary rather than accepting one
+and ignoring it**. The refusal is structural: `AsyncElasticSearchStore` / `ElasticSearchStore` do **not**
+implement `IAsyncTransactionalStore` / `ITransactionalStore`, so there is no `SetTransactionContext` to call
+and no way to believe a boundary is in force. That fails at compile time, which is stronger than a method
+that throws.
+
+`ElasticSearchUnitOfWork` is real and useful, but it is **batching, not atomicity**:
+`Capabilities.Atomicity` is `BestEffort` and `Capabilities.Scope` is `None`. Individual operations within a
+Bulk request succeed or fail independently, and `RollbackAsync` can only discard operations that have not
+been sent -- after `CommitAsync` nothing can be undone.
+
+**Do not add a transaction hook here.** The SQL async store had exactly one that accepted a context and
+dropped it, which is worse than an absent feature because it reads as available (TASK-240). The absence is
+asserted rather than assumed -- `ElasticSearchTransactionRefusalTests` fails if someone widens the store's
+interfaces -- because "I didn't add it" is construction, not evidence.
+
+Pinned by `Birko.Data.ElasticSearch.Tests.ElasticSearchTransactionRefusalTests` (7, **not** gated: the claim
+is about the type system and about what the unit of work declares).
+
 ## Maintenance
 
 ### README Updates

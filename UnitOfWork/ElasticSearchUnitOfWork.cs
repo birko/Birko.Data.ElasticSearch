@@ -79,6 +79,24 @@ public sealed class ElasticSearchUnitOfWork : IUnitOfWork<BulkOperationContext>
     public bool IsActive => _context is not null;
     public BulkOperationContext? Context => _context;
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Elasticsearch has no transaction concept. This is batching, not atomicity: individual operations
+    /// within the bulk succeed or fail independently, and <see cref="RollbackAsync"/> can only discard
+    /// operations that have not been sent yet — once <see cref="CommitAsync"/> has run, nothing can be
+    /// undone. Stated rather than smoothed over, so a caller cannot believe it has cover it does not.
+    /// <para>
+    /// Correspondingly <c>AsyncElasticSearchStore</c> does not implement
+    /// <c>IAsyncTransactionalStore</c> at all — there is no context to hand it, which is the honest "no".
+    /// </para>
+    /// </remarks>
+    public ITransactionCapabilities Capabilities { get; } = new TransactionCapabilities(
+        TransactionAtomicity.BestEffort,
+        TransactionBoundaryScope.None,
+        readsSeeUncommittedWrites: false,
+        limitations: "Elasticsearch has no transactions. Operations are batched via the Bulk API and may "
+                   + "succeed or fail independently; after CommitAsync nothing can be rolled back.");
+
     public ElasticSearchUnitOfWork(ElasticClient client)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
